@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build
+bin/
+dist/
+
+# Test
+coverage.txt
+*.test
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+docs/
+
+# Misc
+.DS_Store
+*.md 

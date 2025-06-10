@@ -1,0 +1,61 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Output of the go coverage tool, build artifacts
+*.coverprofile
+*.cov
+*.log
+
+# Dependency directories (remove the comment below if you use Go modules)
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Go module files (uncomment if you want to ignore them, but usually you want to keep them)
+# go.mod
+# go.sum
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+
+# Test binary, coverage, and result files
+*.test
+*.prof
+*.tmp
+
+# Generated docs
+docs/swagger.json
+docs/swagger.yaml
+
+# Local environment files
+.env
+.env.*
+
+# Database files
+*.db
+*.sqlite
+
+# OS generated files
+Thumbs.db
+.DS_Store
+
+# Migration logs or temp files
+migrations/*.tmp
+migrations/*.log
+
+# Build output
+bin/
+dist/
+test-key
