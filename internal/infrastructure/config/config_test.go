@@ -10,11 +10,6 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	// Set up test environment variables
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_PORT", "5432")
-	os.Setenv("DB_USER", "postgres")
-	os.Setenv("DB_PASSWORD", "postgres")
-	os.Setenv("DB_NAME", "user_manager_test")
 	os.Setenv("JWT_ACCESS_TOKEN_DURATION", "15m")
 	os.Setenv("JWT_REFRESH_TOKEN_DURATION", "24h")
 	os.Setenv("PORT", "8080")
@@ -31,13 +26,6 @@ func TestLoadConfig(t *testing.T) {
 				// Environment variables already set
 			},
 			wantErr: false,
-		},
-		{
-			name: "invalid db port",
-			setup: func() {
-				os.Setenv("DB_PORT", "invalid")
-			},
-			wantErr: true,
 		},
 		{
 			name: "invalid jwt durations",
@@ -73,7 +61,6 @@ func TestLoadConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset environment variables to default values
-			os.Setenv("DB_PORT", "5432")
 			os.Setenv("JWT_ACCESS_TOKEN_DURATION", "15m")
 			os.Setenv("JWT_REFRESH_TOKEN_DURATION", "24h")
 			os.Setenv("PORT", "8080")
@@ -91,21 +78,6 @@ func TestLoadConfig(t *testing.T) {
 
 			if !tt.wantErr {
 				// Validate config values
-				if cfg.DBHost != "localhost" {
-					t.Errorf("LoadConfig() DBHost = %v, want %v", cfg.DBHost, "localhost")
-				}
-				if cfg.DBPort != 5432 {
-					t.Errorf("LoadConfig() DBPort = %v, want %v", cfg.DBPort, 5432)
-				}
-				if cfg.DBUser != "postgres" {
-					t.Errorf("LoadConfig() DBUser = %v, want %v", cfg.DBUser, "postgres")
-				}
-				if cfg.DBPassword != "postgres" {
-					t.Errorf("LoadConfig() DBPassword = %v, want %v", cfg.DBPassword, "postgres")
-				}
-				if cfg.DBName != "user_manager_test" {
-					t.Errorf("LoadConfig() DBName = %v, want %v", cfg.DBName, "user_manager_test")
-				}
 				if cfg.JWTAccessDuration != 15*time.Minute {
 					t.Errorf("LoadConfig() JWTAccessDuration = %v, want %v", cfg.JWTAccessDuration, 15*time.Minute)
 				}

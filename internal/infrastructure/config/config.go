@@ -25,15 +25,8 @@ type SMTPConfig struct {
 }
 
 type Config struct {
-	DBHost     string
-	DBPort     int
-	DBUser     string
-	DBPassword string
-	DBName     string
-
 	JWTAccessDuration  time.Duration
 	JWTRefreshDuration time.Duration
-	JWTKeyPath         string
 
 	ServerPort        int
 	ServerURL         string
@@ -82,13 +75,6 @@ func LoadConfig(logger *zap.Logger) (*Config, error) {
 	}
 
 	cfg := &Config{
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBUser:     getEnv("DB_USER", "owner"),
-		DBPassword: getEnv("DB_PASSWORD", "ownerTest"),
-		DBName:     getEnv("DB_NAME", "users"),
-
-		JWTKeyPath: getEnv("JWT_KEY_PATH", ""),
-
 		ServerURL: getEnv("SERVER_URL", "http://localhost:8080"),
 
 		EmailEnabled: getEnv("EMAIL_ENABLED", "false") == "true",
@@ -110,9 +96,7 @@ func LoadConfig(logger *zap.Logger) (*Config, error) {
 
 	// Load numeric and duration values with error handling
 	var err error
-	if cfg.DBPort, err = getInt("DB_PORT", 5432); err != nil {
-		return nil, err
-	}
+
 	if cfg.JWTAccessDuration, err = getDuration("JWT_ACCESS_TOKEN_DURATION", 15*time.Minute); err != nil {
 		return nil, err
 	}

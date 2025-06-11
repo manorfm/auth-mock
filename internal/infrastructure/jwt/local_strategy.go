@@ -4,12 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -19,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// localStrategy implements JWTStrategy using local RSA key pair
+// localStrategy implements JWTStrategy using a locally generated RSA key pair
 type localStrategy struct {
 	privateKey   *rsa.PrivateKey
 	publicKey    *rsa.PublicKey
@@ -42,8 +38,8 @@ func NewLocalStrategy(config *config.Config, logger *zap.Logger) (domain.JWTStra
 		lastRotation: time.Now(),
 	}
 
-	// Load or generate key pair
-	if err := strategy.loadOrGenerateKeyPair(); err != nil {
+	// Always generate a new key pair (no loading from files)
+	if err := strategy.generateKeyPair(); err != nil {
 		return nil, domain.ErrInvalidKeyConfig
 	}
 
@@ -53,64 +49,12 @@ func NewLocalStrategy(config *config.Config, logger *zap.Logger) (domain.JWTStra
 	return strategy, nil
 }
 
-// loadOrGenerateKeyPair loads the key pair from file or generates a new one
-func (l *localStrategy) loadOrGenerateKeyPair() error {
-	// Ensure directory exists
-	dir := filepath.Dir(l.config.JWTKeyPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return domain.ErrInvalidKeyConfig
-	}
-
-	// Try to load existing key pair
-	if err := l.loadKeyPair(); err == nil {
-		return nil
-	}
-
-	// Generate new key pair
-	return l.generateKeyPair()
-}
-
-// loadKeyPair loads the key pair from file
-func (l *localStrategy) loadKeyPair() error {
-	// Read private key
-	privateKeyPEM, err := os.ReadFile(l.config.JWTKeyPath)
-	if err != nil {
-		return domain.ErrInvalidKeyConfig
-	}
-
-	// Decode PEM block
-	block, _ := pem.Decode(privateKeyPEM)
-	if block == nil {
-		return domain.ErrInvalidKeyConfig
-	}
-
-	// Parse private key
-	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return domain.ErrInvalidKeyConfig
-	}
-
-	l.privateKey = privateKey
-	l.publicKey = &privateKey.PublicKey
-	return nil
-}
-
 // generateKeyPair generates a new RSA key pair
 func (l *localStrategy) generateKeyPair() error {
 	// Generate private key
 	privateKey, err := rsa.GenerateKey(rand.Reader, l.config.RSAKeySize)
 	if err != nil {
-		return domain.ErrInvalidKeyConfig
-	}
-
-	// Encode private key
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	})
-
-	// Write private key to file
-	if err := os.WriteFile(l.config.JWTKeyPath, privateKeyPEM, 0600); err != nil {
+		l.logger.Error("Failed to generate private key", zap.Error(err))
 		return domain.ErrInvalidKeyConfig
 	}
 

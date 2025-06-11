@@ -1,8 +1,6 @@
 package jwt
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,18 +14,11 @@ import (
 )
 
 func TestLocalStrategy(t *testing.T) {
-	// Create temporary directory for test keys
-	tempDir, err := os.MkdirTemp("", "jwt-test-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(tempDir)
-	})
 
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
 	config := &config.Config{
-		JWTKeyPath: filepath.Join(tempDir, "test-key"),
 		RSAKeySize: 2048,
 	}
 

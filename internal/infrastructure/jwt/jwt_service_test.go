@@ -2,8 +2,6 @@ package jwt
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,20 +16,12 @@ import (
 )
 
 func getJWTServiceWithDuration(t *testing.T, accessDuration, refreshDuration time.Duration) domain.JWTService {
-	// Create temporary directory for test keys
-	tempDir, err := os.MkdirTemp("", "jwt-test-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(tempDir)
-	})
-
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
 	cfg := &config.Config{
 		JWTAccessDuration:  accessDuration,
 		JWTRefreshDuration: refreshDuration,
-		JWTKeyPath:         filepath.Join(tempDir, "test-key"),
 		RSAKeySize:         2048,
 	}
 

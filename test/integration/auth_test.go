@@ -3,8 +3,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -57,13 +55,9 @@ func TestAuthService_Integration(t *testing.T) {
 	emailSvc.On("SendPasswordResetEmail", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	// Setup JWT service (real, local key)
-	tempDir, err := os.MkdirTemp("", "jwt-test-*")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
 	cfg := &config.Config{
 		JWTAccessDuration:  15 * time.Minute,
 		JWTRefreshDuration: 24 * time.Hour,
-		JWTKeyPath:         filepath.Join(tempDir, "test-key"),
 		RSAKeySize:         2048,
 		EmailEnabled:       true,
 	}
