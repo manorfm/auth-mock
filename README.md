@@ -7,29 +7,56 @@
 [![Coverage](https://img.shields.io/badge/Coverage-80%25-brightgreen.svg)](https://github.com/manorfm/auth-mock/actions)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/manorfm/auth-mock)
 
-A mock authentication service designed for testing and development purposes. This service provides a complete authentication system that can be used with testcontainers to validate JWT token validation, public key retrieval, and other authentication flows.
+A comprehensive mock authentication service designed for testing and development purposes. This service provides a complete authentication system with in-memory JWT key management, role-based access control, and OAuth2/OpenID Connect support.
 
-## Features
+## Key Features
 
-- In-memory user storage for testing
-- JWT-based authentication with key rotation
-- Role-based access control (RBAC)
-- OAuth2/OpenID Connect support
-- Token blacklisting
-- Rate limiting
-- Refresh token mechanism
+### JWT Implementation
+- In-memory RSA key pair generation and management
+- Automatic key rotation with configurable intervals
 - JWKS endpoint for public key distribution
-- Email verification system
-- Password reset functionality
-- OpenTelemetry integration for observability
-- Swagger/OpenAPI documentation
-- Header-based API versioning
-- Comprehensive error handling
-- Configurable JWT strategies
+- Support for custom claims and dynamic token fields
+- Token blacklisting and revocation
+- Configurable token durations (access and refresh)
+- Secure key ID generation using SHA-256
+- Thread-safe key operations with mutex protection
+
+### Authentication & Authorization
+- Role-based access control (RBAC)
+- OAuth2/OpenID Connect protocol support
 - Multi-factor authentication (MFA) with TOTP
 - Backup codes for MFA recovery
 - MFA ticket-based verification flow
-- Default user configuration for testing
+- Email verification system
+- Password reset functionality
+- Rate limiting with configurable thresholds
+
+### Security Features
+- In-memory RSA key pairs (2048-bit by default)
+- Secure key rotation mechanism
+- Rate limiting to prevent abuse
+- Input validation and sanitization
+- Secure password hashing
+- Token blacklisting
+- Header-based API versioning
+- Comprehensive error handling
+
+### Configuration Options
+- JWT token durations (access and refresh)
+- RSA key size (default: 2048 bits)
+- JWKS cache duration
+- SMTP settings for email delivery
+- Default user configuration
+- Custom claims fields
+- TOTP settings (issuer, algorithm, digits, period)
+- Backup codes configuration
+
+### Observability
+- OpenTelemetry integration
+- Structured logging with Zap
+- Distributed tracing
+- Metrics collection
+- Performance monitoring
 
 ## Architecture
 
@@ -37,49 +64,36 @@ The project follows a hexagonal architecture with the following layers:
 
 - `domain`: Core business entities, interfaces, and domain-specific errors
 - `application`: Use cases and business logic
-- `infrastructure`: JWT, and other external service implementations
+- `infrastructure`: JWT, email, and other external service implementations
 - `interfaces/http`: HTTP handlers, middlewares, and OpenAPI/Swagger documentation
 
-### API Versioning
+### JWT Strategy
 
-The service uses header-based versioning through the `Accept` header:
+The service implements an in-memory JWT strategy that:
 
-```http
-Accept: application/vnd.ipede.v1+json
-```
+- Generates and manages RSA key pairs in memory
+- Provides automatic key rotation
+- Implements thread-safe operations
+- Supports custom claims and dynamic fields
+- Handles token verification with proper error handling
+- Exposes JWKS endpoint for public key distribution
 
-This approach:
-- Keeps URLs clean and stable
-- Allows for multiple API versions to coexist
-- Provides better separation of concerns
-- Follows REST best practices
+Key features of the JWT implementation:
+- Automatic key rotation with configurable intervals
+- Thread-safe operations using mutex protection
+- Secure key ID generation using SHA-256
+- Support for custom claims and dynamic fields
+- Comprehensive error handling for token operations
 
 ### Error Handling
 
 The service implements a comprehensive error handling system with:
 
 - Domain-specific error types (`BusinessError` and `InfraError`)
-- Standardized error codes (U0001-U0044)
+- Standardized error codes (U0001-U0057)
 - Detailed error messages and codes
 - Proper error wrapping and context
 - HTTP status code mapping
-
-Example error response:
-```json
-{
-  "code": "U0001",
-  "message": "Invalid credentials"
-}
-```
-
-### JWT Strategy
-
-The service implements a composite JWT strategy that:
-
-- Provides automatic fallback mechanisms
-- Implements key rotation
-- Handles token verification with proper error handling
-- Supports JWKS for public key distribution
 
 ## Getting Started
 
@@ -96,14 +110,13 @@ Create a `.env` file in the root directory with the following variables:
 
 ```env
 # JWT Configuration
-JWT_ACCESS_DURATION=15m
-JWT_REFRESH_DURATION=168h  # 7 days
+JWT_ACCESS_TOKEN_DURATION=15m
+JWT_REFRESH_TOKEN_DURATION=168h  # 7 days
 RSA_KEY_SIZE=2048
 JWKS_CACHE_DURATION=1h
 
 # Server Configuration
-SERVER_PORT=8080
-SERVER_HOST=localhost
+PORT=8080
 SERVER_URL=http://localhost:8080
 
 # Default User Configuration
@@ -127,43 +140,9 @@ TOTP_ALGORITHM=SHA1
 TOTP_DIGITS=6
 TOTP_PERIOD=30
 TOTP_BACKUP_CODES_COUNT=10
-```
 
-### Default User Configuration
-
-The service automatically creates a default user for testing purposes. This is particularly useful when using testcontainers to validate authentication flows. The default user will be created with the following characteristics:
-
-1. Email and password from environment variables:
-   - `DEFAULT_USER_EMAIL` (defaults to empty string)
-   - `DEFAULT_USER_PASSWORD` (defaults to empty string)
-
-2. Roles from environment variable:
-   - `DEFAULT_USER_ROLES` (defaults to "admin" if not specified)
-   - Multiple roles can be specified as a comma-separated list (e.g., "admin,user,manager")
-
-3. The default user will be created with:
-   - Email verification already completed
-   - All specified roles assigned
-   - A unique ULID as the user ID
-
-Example usage with testcontainers:
-```go
-func TestAuthentication(t *testing.T) {
-    // Start the auth-mock service with testcontainers
-    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-        ContainerRequest: testcontainers.ContainerRequest{
-            Image: "manorfm/auth-mock:latest",
-            Env: map[string]string{
-                "DEFAULT_USER_EMAIL": "test@example.com",
-                "DEFAULT_USER_PASSWORD": "test123",
-                "DEFAULT_USER_ROLES": "admin,user",
-            },
-            ExposedPorts: []string{"8080/tcp"},
-        },
-        Started: true,
-    })
-    // ... rest of your test
-}
+# Custom Claims (optional)
+CUSTOM_CLAIMS_FIELDS={"custom_field":"value"}
 ```
 
 ### Running the Application
@@ -206,44 +185,24 @@ The API documentation is available through Swagger UI. Once the application is r
 http://localhost:8080/swagger/index.html
 ```
 
-### Authentication
+### Authentication Flow
 
-The API uses JWT (JSON Web Tokens) for authentication with the following features:
-
-- Access and refresh token pairs
-- Token blacklisting for revocation
-- JWKS endpoint for public key distribution
-- Rate limiting to prevent abuse
-
-To access protected endpoints:
-
-1. Register a new user using the `/api/users/register` endpoint
+1. Register a new user using the `/api/register` endpoint
 2. Login using the `/api/auth/login` endpoint to get your access token
 3. Include the token in the `Authorization` header of subsequent requests:
    ```
    Authorization: Bearer <your-access-token>
    ```
 
-### OAuth2/OpenID Connect
-
-The service implements OAuth2 and OpenID Connect protocols with the following endpoints:
-
-- `/oauth2/authorize` - Authorization endpoint
-- `/oauth2/token` - Token endpoint
-- `/oauth2/userinfo` - UserInfo endpoint
-- `/.well-known/openid-configuration` - OpenID Provider Configuration
-- `/.well-known/jwks.json` - JSON Web Key Set
-
 ### Available Endpoints
 
 #### Public Endpoints
-- `POST /api/users/register` - Register a new user
+- `POST /api/register` - Register a new user
 - `POST /api/auth/login` - Login and get access token
 - `POST /api/auth/verify-email` - Verify email address
 - `POST /api/auth/request-password-reset` - Request password reset
 - `POST /api/auth/reset-password` - Reset password
 - `POST /api/auth/verify-mfa` - Verify MFA code
-- `POST /api/oauth2/token` - OAuth2 token endpoint
 - `GET /.well-known/openid-configuration` - OpenID Provider Configuration
 - `GET /.well-known/jwks.json` - JSON Web Key Set
 
@@ -265,6 +224,7 @@ The service implements OAuth2 and OpenID Connect protocols with the following en
 - `GET /api/oauth2/clients/{id}` - Get OAuth2 client
 - `PUT /api/oauth2/clients/{id}` - Update OAuth2 client
 - `DELETE /api/oauth2/clients/{id}` - Delete OAuth2 client
+
 
 ### Error Responses
 
@@ -354,21 +314,8 @@ Common error codes:
 └── bin/                 # Compiled binaries
 ```
 
+
 ## Development
-
-```bash
-# Run all pending migrations
-make migrate-up
-
-# Rollback the last migration
-make migrate-down
-
-# Reset migrations (rollback all and run up)
-make migrate-reset
-
-# Force migration to specific version
-make migrate-force VERSION=<version>
-```
 
 ### Testing
 
@@ -392,32 +339,6 @@ make lint
 # Run all checks (lint + test)
 make check
 ```
-
-## Observability
-
-The service includes OpenTelemetry integration for:
-
-- Distributed tracing
-- Metrics collection
-- Structured logging
-- Performance monitoring
-
-## Security Features
-
-- Rate limiting
-- Input validation
-- Secure password hashing
-- Email verification
-- Token blacklisting
-- Role-based access control
-- Header-based API versioning
-- Comprehensive error handling
-- Configurable JWT strategies
-- Multi-factor authentication with TOTP
-- Backup codes for MFA recovery
-- MFA ticket-based verification flow
-- Secure TOTP secret storage
-- TOTP backup codes management
 
 ## License
 

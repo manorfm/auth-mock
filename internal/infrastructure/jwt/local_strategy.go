@@ -68,7 +68,20 @@ func (l *localStrategy) Sign(claims *domain.Claims) (string, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	mapClaims := jwt.MapClaims{
+		"sub":   claims.Subject,
+		"exp":   claims.ExpiresAt.Unix(),
+		"iat":   claims.IssuedAt.Unix(),
+		"jti":   claims.ID,
+		"roles": claims.Roles,
+	}
+
+	// Adiciona os claims extras (dinâmicos)
+	for k, v := range claims.Extra {
+		mapClaims[k] = v
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, mapClaims)
 	token.Header["kid"] = l.keyID
 
 	return token.SignedString(l.privateKey)

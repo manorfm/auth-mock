@@ -171,6 +171,11 @@ func (j *jwtService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domai
 		return nil, domain.ErrTokenHasNoRoles
 	}
 
+	extraClaims, err := j.config.ParseCustomClaims()
+	if err != nil {
+		j.logger.Warn("Invalid extra claims format", zap.Error(err))
+	}
+
 	// Generate access token
 	accessTokenID := ulid.Make().String()
 	accessClaims := domain.Claims{
@@ -181,6 +186,7 @@ func (j *jwtService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domai
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        accessTokenID,
 		},
+		Extra: extraClaims,
 	}
 
 	accessToken, err := j.strategy.Sign(&accessClaims)

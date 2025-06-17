@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -40,6 +41,9 @@ type Config struct {
 	DefaultUserEmail    string
 	DefaultUserPassword string
 	DefaultUserRoles    []string
+
+	// Custom claims fields
+	CustomClaimsFields string
 }
 
 // LoadConfig loads configuration from environment variables, logging with zap
@@ -92,6 +96,7 @@ func LoadConfig(logger *zap.Logger) (*Config, error) {
 		DefaultUserEmail:    getEnv("DEFAULT_USER_EMAIL", ""),
 		DefaultUserPassword: getEnv("DEFAULT_USER_PASSWORD", ""),
 		DefaultUserRoles:    strings.Split(getEnv("DEFAULT_USER_ROLES", "admin"), ","),
+		CustomClaimsFields:  getEnv("CUSTOM_CLAIMS_FIELDS", ""),
 	}
 
 	// Load numeric and duration values with error handling
@@ -130,6 +135,20 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func (c *Config) ParseCustomClaims() (map[string]interface{}, error) {
+	if c.CustomClaimsFields == "" {
+		return nil, nil
+	}
+
+	var claims map[string]interface{}
+	err := json.Unmarshal([]byte(c.CustomClaimsFields), &claims)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CUSTOM_CLAIMS_FIELDS: %w", err)
+	}
+
+	return claims, nil
 }
 
 // Validate ensures configuration values are valid
