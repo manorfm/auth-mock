@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"net/http" // Added
 	"strings"
 
 	"github.com/manorfm/auth-mock/internal/domain"
@@ -28,6 +29,40 @@ func NewOIDCService(oauth2Service domain.OAuth2Service, jwtService domain.JWTSer
 		config:        config,
 		logger:        logger,
 	}
+}
+
+// getServerURL determines the server URL based on context, headers, or config.
+func (s *OIDCService) getServerURL(ctx context.Context) string {
+	s.logger.Debug("getServerURL called")
+	if r, ok := ctx.Value(domain.RequestKey).(*http.Request); ok {
+		s.logger.Debug("Request object found in context", zap.Any("requestURL", r.URL), zap.String("requestHost", r.Host), zap.Any("requestHeader", r.Header))
+		// Check for X-Forwarded headers first
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			if host := r.Header.Get("X-Forwarded-Host"); host != "" {
+				s.logger.Debug("Using X-Forwarded headers for server URL", zap.String("proto", proto), zap.String("host", host))
+				return proto + "://" + host
+			}
+		}
+
+		host := r.Host
+		if host != "" {
+			scheme := r.URL.Scheme
+			if scheme == "" {
+				if r.TLS != nil {
+					scheme = "https"
+				} else {
+					scheme = "http"
+				}
+			}
+			s.logger.Debug("Using request's scheme and host for server URL", zap.String("scheme", scheme), zap.String("host", host))
+			return scheme + "://" + host
+		}
+		s.logger.Debug("Request object present, but Host was empty", zap.Any("requestURL", r.URL))
+	} else {
+		s.logger.Debug("Request object NOT found in context via domain.RequestKey")
+	}
+	s.logger.Warn("Falling back to ServerURL from config for OIDC discovery.", zap.String("fallbackURL", s.config.ServerURL))
+	return s.config.ServerURL
 }
 
 func (s *OIDCService) GetUserInfo(ctx context.Context, userID string) (*domain.UserInfo, error) {
@@ -76,12 +111,14 @@ func (s *OIDCService) GetOpenIDConfiguration(ctx context.Context) (map[string]in
 		return nil, domain.ErrInternal
 	}
 
+	serverURL := s.getServerURL(ctx)
+
 	return map[string]interface{}{
-		"issuer":                                s.config.ServerURL,
-		"authorization_endpoint":                s.config.ServerURL + "/oauth2/authorize",
-		"token_endpoint":                        s.config.ServerURL + "/oauth2/token",
-		"userinfo_endpoint":                     s.config.ServerURL + "/oauth2/userinfo",
-		"jwks_uri":                              s.config.ServerURL + "/.well-known/jwks.json",
+		"issuer":                                serverURL,
+		"authorization_endpoint":                serverURL + "/oauth2/authorize",
+		"token_endpoint":                        serverURL + "/oauth2/token",
+		"userinfo_endpoint":                     serverURL + "/oauth2/userinfo",
+		"jwks_uri":                              serverURL + "/.well-known/jwks.json",
 		"response_types_supported":              []string{"code", "token", "id_token"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},

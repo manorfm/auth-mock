@@ -12,6 +12,8 @@ const (
 	ContextKeyCodeChallenge ContextKey = "code_challenge"
 	// ContextKeyCodeChallengeMethod is the key for the PKCE code challenge method in the context
 	ContextKeyCodeChallengeMethod ContextKey = "code_challenge_method"
+	// RequestKey is the key for the HTTP request in the context
+	RequestKey ContextKey = "request"
 )
 
 // WithSubject adds the subject (user ID) to the context

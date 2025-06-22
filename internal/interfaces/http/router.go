@@ -16,6 +16,7 @@ import (
 	"github.com/manorfm/auth-mock/internal/interfaces/http/handlers"
 	"github.com/manorfm/auth-mock/internal/interfaces/http/middleware/auth"
 	"github.com/manorfm/auth-mock/internal/interfaces/http/middleware/ratelimit"
+	"github.com/manorfm/auth-mock/internal/interfaces/http/middleware/requestcontext" // Added import
 	httptotp "github.com/manorfm/auth-mock/internal/interfaces/http/middleware/totp"
 	"github.com/oklog/ulid/v2"
 	swagger "github.com/swaggo/http-swagger"
@@ -64,8 +65,9 @@ func NewRouter(
 	createDefaultUser(authService, cfg, logger)
 
 	// Create router with middleware
-	router := createRouter()
+	router := createRouter() // RequestContextMiddleware is now applied inside createRouter
 
+	// Apply other global middlewares
 	router.Use(rateLimiter.Middleware)
 
 	// Initialize TOTP middleware
@@ -184,7 +186,10 @@ func createDefaultUser(authService domain.AuthService, cfg *config.Config, logge
 func createRouter() *chi.Mux {
 	router := chi.NewRouter()
 
-	// Add middleware
+	// Apply RequestContextMiddleware first to ensure request is in context
+	router.Use(requestcontext.Middleware)
+
+	// Add other standard chi middleware
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.RequestID)
