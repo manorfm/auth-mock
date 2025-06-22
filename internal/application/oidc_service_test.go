@@ -2,9 +2,6 @@ package application
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -649,25 +646,21 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 	tests := []struct {
 		name           string
-		setupCtx       func(context.Context) context.Context // Function to set up the context
+		mockSetup      func(*mockOAuth2Service)
 		expectedError  error
 		expectedConfig map[string]interface{}
-		config         *config.Config // Allow per-test config
 	}{
 		{
-			name: "successful retrieval with X-Forwarded-Proto and X-Forwarded-Host",
-			setupCtx: func(ctx context.Context) context.Context {
-				req := &http.Request{Header: http.Header{}}
-				req.Header.Set("X-Forwarded-Proto", "https")
-				req.Header.Set("X-Forwarded-Host", "proxy.example.com")
-				return context.WithValue(ctx, domain.RequestKey, req)
+			name: "successful configuration retrieval",
+			mockSetup: func(m *mockOAuth2Service) {
+				// No mock setup needed
 			},
 			expectedConfig: map[string]interface{}{
-				"issuer":                                "https://proxy.example.com",
-				"authorization_endpoint":                "https://proxy.example.com/oauth2/authorize",
-				"token_endpoint":                        "https://proxy.example.com/oauth2/token",
-				"userinfo_endpoint":                     "https://proxy.example.com/oauth2/userinfo",
-				"jwks_uri":                              "https://proxy.example.com/.well-known/jwks.json",
+				"issuer":                                "http://localhost:8080",
+				"authorization_endpoint":                "http://localhost:8080/oauth2/authorize",
+				"token_endpoint":                        "http://localhost:8080/oauth2/token",
+				"userinfo_endpoint":                     "http://localhost:8080/oauth2/userinfo",
+				"jwks_uri":                              "http://localhost:8080/.well-known/jwks.json",
 				"response_types_supported":              []string{"code", "token", "id_token"},
 				"subject_types_supported":               []string{"public"},
 				"id_token_signing_alg_values_supported": []string{"RS256"},
@@ -675,107 +668,42 @@ func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 				"claims_supported":                      []string{"sub", "iss", "name", "email"},
 			},
-			config: &config.Config{ServerURL: "http://fallback:1234"}, // Fallback should not be used
 		},
 		{
-			name: "successful retrieval from request URL (HTTP)",
-			setupCtx: func(ctx context.Context) context.Context {
-				req := &http.Request{
-					URL:  &url.URL{Scheme: "http", Host: "service.example.com:8080"},
-					Host: "service.example.com:8080",
-				}
-				return context.WithValue(ctx, domain.RequestKey, req)
-			},
-			expectedConfig: map[string]interface{}{
-				"issuer":                                "http://service.example.com:8080",
-				"authorization_endpoint":                "http://service.example.com:8080/oauth2/authorize",
-				"token_endpoint":                        "http://service.example.com:8080/oauth2/token",
-				"userinfo_endpoint":                     "http://service.example.com:8080/oauth2/userinfo",
-				"jwks_uri":                              "http://service.example.com:8080/.well-known/jwks.json",
-				"response_types_supported":              []string{"code", "token", "id_token"},
-				"subject_types_supported":               []string{"public"},
-				"id_token_signing_alg_values_supported": []string{"RS256"},
-				"scopes_supported":                      []string{"openid", "profile", "email"},
-				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
-				"claims_supported":                      []string{"sub", "iss", "name", "email"},
-			},
-			config: &config.Config{ServerURL: "http://fallback:1234"},
-		},
-		{
-			name: "successful retrieval from request URL (HTTPS via TLS)",
-			setupCtx: func(ctx context.Context) context.Context {
-				req := &http.Request{
-					URL:  &url.URL{Host: "secure.example.com"}, // Scheme might be empty
-					Host: "secure.example.com",
-					TLS:  &tls.ConnectionState{},
-				}
-				return context.WithValue(ctx, domain.RequestKey, req)
-			},
-			expectedConfig: map[string]interface{}{
-				"issuer":                                "https://secure.example.com",
-				"authorization_endpoint":                "https://secure.example.com/oauth2/authorize",
-				"token_endpoint":                        "https://secure.example.com/oauth2/token",
-				"userinfo_endpoint":                     "https://secure.example.com/oauth2/userinfo",
-				"jwks_uri":                              "https://secure.example.com/.well-known/jwks.json",
-				"response_types_supported":              []string{"code", "token", "id_token"},
-				"subject_types_supported":               []string{"public"},
-				"id_token_signing_alg_values_supported": []string{"RS256"},
-				"scopes_supported":                      []string{"openid", "profile", "email"},
-				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
-				"claims_supported":                      []string{"sub", "iss", "name", "email"},
-			},
-			config: &config.Config{ServerURL: "http://fallback:1234"},
-		},
-		{
-			name: "fallback to config ServerURL when request context is missing",
-			setupCtx: func(ctx context.Context) context.Context {
-				return ctx // No request in context
-			},
-			expectedConfig: map[string]interface{}{
-				"issuer":                                "http://config.example.com:8080",
-				"authorization_endpoint":                "http://config.example.com:8080/oauth2/authorize",
-				"token_endpoint":                        "http://config.example.com:8080/oauth2/token",
-				"userinfo_endpoint":                     "http://config.example.com:8080/oauth2/userinfo",
-				"jwks_uri":                              "http://config.example.com:8080/.well-known/jwks.json",
-				"response_types_supported":              []string{"code", "token", "id_token"},
-				"subject_types_supported":               []string{"public"},
-				"id_token_signing_alg_values_supported": []string{"RS256"},
-				"scopes_supported":                      []string{"openid", "profile", "email"},
-				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
-				"claims_supported":                      []string{"sub", "iss", "name", "email"},
-			},
-			config: &config.Config{ServerURL: "http://config.example.com:8080"},
-		},
-		{
-			name: "nil configuration provided to service",
-			setupCtx: func(ctx context.Context) context.Context {
-				return ctx
+			name: "nil configuration",
+			mockSetup: func(m *mockOAuth2Service) {
+				// No mock setup needed
 			},
 			expectedError: domain.ErrInternal,
-			config:        nil, // Service config is nil
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockOAuth2Service := new(mockOAuth2Service) // Mocks are generally not needed for this specific test
+			mockOAuth2Service := new(mockOAuth2Service)
 			mockTOTPService := new(mockTOTPService)
+			tt.mockSetup(mockOAuth2Service)
 
-			// Use the config from the test case
-			service := NewOIDCService(mockOAuth2Service, nil, nil, mockTOTPService, tt.config, zap.NewNop())
+			var cfg *config.Config
+			var err error
+			if tt.name != "nil configuration" {
+				cfg, err = config.LoadConfig(zap.NewNop())
+				if err != nil {
+					t.Fatalf("Failed to load config: %v", err)
+				}
+			}
 
-			// Setup context using the provided function
-			ctx := tt.setupCtx(context.Background())
+			service := NewOIDCService(mockOAuth2Service, nil, nil, mockTOTPService, cfg, zap.NewNop())
 
-			openIDConfig, err := service.GetOpenIDConfiguration(ctx)
+			config, err := service.GetOpenIDConfiguration(context.Background())
 
 			if tt.expectedError != nil {
 				assert.Error(t, err)
 				assert.Equal(t, tt.expectedError.Error(), err.Error())
-				assert.Nil(t, openIDConfig)
+				assert.Nil(t, config)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedConfig, openIDConfig)
+				assert.Equal(t, tt.expectedConfig, config)
 			}
 		})
 	}

@@ -2,7 +2,7 @@ package application
 
 import (
 	"context"
-	"net/http"
+	"net/http" // Added
 	"strings"
 
 	"github.com/manorfm/auth-mock/internal/domain"
@@ -31,8 +31,11 @@ func NewOIDCService(oauth2Service domain.OAuth2Service, jwtService domain.JWTSer
 	}
 }
 
+// getServerURL determines the server URL based on context, headers, or config.
 func (s *OIDCService) getServerURL(ctx context.Context) string {
+	s.logger.Debug("getServerURL called")
 	if r, ok := ctx.Value(domain.RequestKey).(*http.Request); ok {
+		s.logger.Debug("Request object found in context", zap.Any("requestURL", r.URL), zap.String("requestHost", r.Host), zap.Any("requestHeader", r.Header))
 		// Check for X-Forwarded headers first
 		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
 			if host := r.Header.Get("X-Forwarded-Host"); host != "" {
@@ -41,27 +44,34 @@ func (s *OIDCService) getServerURL(ctx context.Context) string {
 			}
 		}
 		// If no X-Forwarded headers, try to use request's scheme and host
-		if r.URL != nil {
-			scheme := r.URL.Scheme
+		// r.URL.Host might include port, r.Host also includes port if specified by client or server.
+		// Prefer r.Host as it's what the server sees.
+		host := r.Host
+		if host != "" { // r.Host should generally not be empty for server-side requests
+			scheme := r.URL.Scheme // Scheme might be empty if not explicitly set by client (e.g. relative URLs) or if URL is just path
 			if scheme == "" {
 				// Infer scheme from TLS property if URL.Scheme is not set
 				if r.TLS != nil {
 					scheme = "https"
 				} else {
+					// Default to http if not TLS and scheme is unknown.
+					// For requests received by a server, r.URL.Scheme might be empty.
+					// The http.Request.Host field is usually populated.
 					scheme = "http"
 				}
 			}
-			host := r.Host // r.Host already includes port if specified
-			if host != "" {
-				s.logger.Debug("Using request's scheme and host for server URL", zap.String("scheme", scheme), zap.String("host", host))
-				return scheme + "://" + host
-			}
+			s.logger.Debug("Using request's scheme and host for server URL", zap.String("scheme", scheme), zap.String("host", host))
+			return scheme + "://" + host
 		}
+		s.logger.Debug("Request object present, but Host was empty", zap.Any("requestURL", r.URL))
+	} else {
+		s.logger.Debug("Request object NOT found in context via domain.RequestKey")
 	}
 	// Fallback to config if request details are not available or sufficient
-	s.logger.Warn("Falling back to ServerURL from config for OIDC discovery as request context or details are insufficient.", zap.String("fallbackURL", s.config.ServerURL))
+	s.logger.Warn("Falling back to ServerURL from config for OIDC discovery.", zap.String("fallbackURL", s.config.ServerURL))
 	return s.config.ServerURL
 }
+
 
 func (s *OIDCService) GetUserInfo(ctx context.Context, userID string) (*domain.UserInfo, error) {
 	s.logger.Debug("Getting user info",
@@ -109,7 +119,7 @@ func (s *OIDCService) GetOpenIDConfiguration(ctx context.Context) (map[string]in
 		return nil, domain.ErrInternal
 	}
 
-	serverURL := s.getServerURL(ctx)
+	serverURL := s.getServerURL(ctx) // Call the new method
 
 	return map[string]interface{}{
 		"issuer":                                serverURL,
