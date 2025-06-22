@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -646,14 +647,15 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 	tests := []struct {
 		name           string
-		mockSetup      func(*mockOAuth2Service)
+		setupCtx       func(context.Context) context.Context
 		expectedError  error
 		expectedConfig map[string]interface{}
+		config         *config.Config
 	}{
 		{
-			name: "successful configuration retrieval",
-			mockSetup: func(m *mockOAuth2Service) {
-				// No mock setup needed
+			name: "successful configuration retrieval with default server URL",
+			setupCtx: func(ctx context.Context) context.Context {
+				return ctx // No headers
 			},
 			expectedConfig: map[string]interface{}{
 				"issuer":                                "http://localhost:8080",
@@ -668,13 +670,38 @@ func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 				"claims_supported":                      []string{"sub", "iss", "name", "email"},
 			},
+			config: &config.Config{ServerURL: "http://localhost:8080"},
+		},
+		{
+			name: "successful configuration retrieval with X-Forwarded headers",
+			setupCtx: func(ctx context.Context) context.Context {
+				req := &http.Request{Header: http.Header{}}
+				req.Header.Set("X-Forwarded-Proto", "https")
+				req.Header.Set("X-Forwarded-Host", "example.com")
+				return context.WithValue(ctx, domain.RequestKey, req)
+			},
+			expectedConfig: map[string]interface{}{
+				"issuer":                                "https://example.com",
+				"authorization_endpoint":                "https://example.com/oauth2/authorize",
+				"token_endpoint":                        "https://example.com/oauth2/token",
+				"userinfo_endpoint":                     "https://example.com/oauth2/userinfo",
+				"jwks_uri":                              "https://example.com/.well-known/jwks.json",
+				"response_types_supported":              []string{"code", "token", "id_token"},
+				"subject_types_supported":               []string{"public"},
+				"id_token_signing_alg_values_supported": []string{"RS256"},
+				"scopes_supported":                      []string{"openid", "profile", "email"},
+				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
+				"claims_supported":                      []string{"sub", "iss", "name", "email"},
+			},
+			config: &config.Config{ServerURL: "http://localhost:8080"},
 		},
 		{
 			name: "nil configuration",
-			mockSetup: func(m *mockOAuth2Service) {
-				// No mock setup needed
+			setupCtx: func(ctx context.Context) context.Context {
+				return ctx
 			},
 			expectedError: domain.ErrInternal,
+			config:        nil,
 		},
 	}
 
@@ -682,20 +709,10 @@ func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockOAuth2Service := new(mockOAuth2Service)
 			mockTOTPService := new(mockTOTPService)
-			tt.mockSetup(mockOAuth2Service)
 
-			var cfg *config.Config
-			var err error
-			if tt.name != "nil configuration" {
-				cfg, err = config.LoadConfig(zap.NewNop())
-				if err != nil {
-					t.Fatalf("Failed to load config: %v", err)
-				}
-			}
-
-			service := NewOIDCService(mockOAuth2Service, nil, nil, mockTOTPService, cfg, zap.NewNop())
-
-			config, err := service.GetOpenIDConfiguration(context.Background())
+			service := NewOIDCService(mockOAuth2Service, nil, nil, mockTOTPService, tt.config, zap.NewNop())
+			ctx := tt.setupCtx(context.Background())
+			config, err := service.GetOpenIDConfiguration(ctx)
 
 			if tt.expectedError != nil {
 				assert.Error(t, err)

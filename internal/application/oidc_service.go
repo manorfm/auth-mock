@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/manorfm/auth-mock/internal/domain"
@@ -28,6 +29,17 @@ func NewOIDCService(oauth2Service domain.OAuth2Service, jwtService domain.JWTSer
 		config:        config,
 		logger:        logger,
 	}
+}
+
+func (s *OIDCService) getServerURL(ctx context.Context) string {
+	if r, ok := ctx.Value(domain.RequestKey).(*http.Request); ok {
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			if host := r.Header.Get("X-Forwarded-Host"); host != "" {
+				return proto + "://" + host
+			}
+		}
+	}
+	return s.config.ServerURL
 }
 
 func (s *OIDCService) GetUserInfo(ctx context.Context, userID string) (*domain.UserInfo, error) {
@@ -76,12 +88,14 @@ func (s *OIDCService) GetOpenIDConfiguration(ctx context.Context) (map[string]in
 		return nil, domain.ErrInternal
 	}
 
+	serverURL := s.getServerURL(ctx)
+
 	return map[string]interface{}{
-		"issuer":                                s.config.ServerURL,
-		"authorization_endpoint":                s.config.ServerURL + "/oauth2/authorize",
-		"token_endpoint":                        s.config.ServerURL + "/oauth2/token",
-		"userinfo_endpoint":                     s.config.ServerURL + "/oauth2/userinfo",
-		"jwks_uri":                              s.config.ServerURL + "/.well-known/jwks.json",
+		"issuer":                                serverURL,
+		"authorization_endpoint":                serverURL + "/oauth2/authorize",
+		"token_endpoint":                        serverURL + "/oauth2/token",
+		"userinfo_endpoint":                     serverURL + "/oauth2/userinfo",
+		"jwks_uri":                              serverURL + "/.well-known/jwks.json",
 		"response_types_supported":              []string{"code", "token", "id_token"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
