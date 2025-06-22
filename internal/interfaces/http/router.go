@@ -107,6 +107,12 @@ func NewRouter(
 		http.ServeFile(w, r, "docs/swagger.json")
 	})
 
+	// OIDC routes
+	router.Group(func(r chi.Router) {
+		r.Get("/.well-known/openid-configuration", oidcHandler.GetOpenIDConfigurationHandler)
+		r.Get("/.well-known/jwks.json", oidcHandler.GetJWKSHandler)
+	})
+
 	// API routes without version in URL
 	router.Route("/api", func(r chi.Router) {
 		// Public routes
@@ -117,12 +123,6 @@ func NewRouter(
 			r.Post("/auth/verify-email", authHandler.VerifyEmailHandler)
 			r.Post("/auth/request-password-reset", authHandler.RequestPasswordResetHandler)
 			r.Post("/auth/reset-password", authHandler.ResetPasswordHandler)
-		})
-
-		// OIDC routes
-		r.Group(func(r chi.Router) {
-			r.Get("/.well-known/openid-configuration", oidcHandler.GetOpenIDConfigurationHandler)
-			r.Get("/.well-known/jwks.json", oidcHandler.GetJWKSHandler)
 		})
 
 		// Admin routes
