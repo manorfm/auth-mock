@@ -43,20 +43,14 @@ func (s *OIDCService) getServerURL(ctx context.Context) string {
 				return proto + "://" + host
 			}
 		}
-		// If no X-Forwarded headers, try to use request's scheme and host
-		// r.URL.Host might include port, r.Host also includes port if specified by client or server.
-		// Prefer r.Host as it's what the server sees.
+
 		host := r.Host
-		if host != "" { // r.Host should generally not be empty for server-side requests
-			scheme := r.URL.Scheme // Scheme might be empty if not explicitly set by client (e.g. relative URLs) or if URL is just path
+		if host != "" {
+			scheme := r.URL.Scheme
 			if scheme == "" {
-				// Infer scheme from TLS property if URL.Scheme is not set
 				if r.TLS != nil {
 					scheme = "https"
 				} else {
-					// Default to http if not TLS and scheme is unknown.
-					// For requests received by a server, r.URL.Scheme might be empty.
-					// The http.Request.Host field is usually populated.
 					scheme = "http"
 				}
 			}
@@ -67,11 +61,9 @@ func (s *OIDCService) getServerURL(ctx context.Context) string {
 	} else {
 		s.logger.Debug("Request object NOT found in context via domain.RequestKey")
 	}
-	// Fallback to config if request details are not available or sufficient
 	s.logger.Warn("Falling back to ServerURL from config for OIDC discovery.", zap.String("fallbackURL", s.config.ServerURL))
 	return s.config.ServerURL
 }
-
 
 func (s *OIDCService) GetUserInfo(ctx context.Context, userID string) (*domain.UserInfo, error) {
 	s.logger.Debug("Getting user info",
@@ -119,7 +111,7 @@ func (s *OIDCService) GetOpenIDConfiguration(ctx context.Context) (map[string]in
 		return nil, domain.ErrInternal
 	}
 
-	serverURL := s.getServerURL(ctx) // Call the new method
+	serverURL := s.getServerURL(ctx)
 
 	return map[string]interface{}{
 		"issuer":                                serverURL,
