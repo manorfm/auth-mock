@@ -20,7 +20,16 @@ import (
 	"github.com/oklog/ulid/v2"
 	swagger "github.com/swaggo/http-swagger"
 	"go.uber.org/zap"
+	"context" // Added for context.WithValue
 )
+
+// RequestContextMiddleware injects the *http.Request into the context.
+func RequestContextMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), domain.RequestKey, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
 
 type Router struct {
 	router *chi.Mux
@@ -66,6 +75,8 @@ func NewRouter(
 	// Create router with middleware
 	router := createRouter()
 
+	// Apply the custom RequestContextMiddleware globally after basic chi middlewares
+	router.Use(RequestContextMiddleware)
 	router.Use(rateLimiter.Middleware)
 
 	// Initialize TOTP middleware
