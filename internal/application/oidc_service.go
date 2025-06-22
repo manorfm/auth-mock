@@ -33,12 +33,33 @@ func NewOIDCService(oauth2Service domain.OAuth2Service, jwtService domain.JWTSer
 
 func (s *OIDCService) getServerURL(ctx context.Context) string {
 	if r, ok := ctx.Value(domain.RequestKey).(*http.Request); ok {
+		// Check for X-Forwarded headers first
 		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
 			if host := r.Header.Get("X-Forwarded-Host"); host != "" {
+				s.logger.Debug("Using X-Forwarded headers for server URL", zap.String("proto", proto), zap.String("host", host))
 				return proto + "://" + host
 			}
 		}
+		// If no X-Forwarded headers, try to use request's scheme and host
+		if r.URL != nil {
+			scheme := r.URL.Scheme
+			if scheme == "" {
+				// Infer scheme from TLS property if URL.Scheme is not set
+				if r.TLS != nil {
+					scheme = "https"
+				} else {
+					scheme = "http"
+				}
+			}
+			host := r.Host // r.Host already includes port if specified
+			if host != "" {
+				s.logger.Debug("Using request's scheme and host for server URL", zap.String("scheme", scheme), zap.String("host", host))
+				return scheme + "://" + host
+			}
+		}
 	}
+	// Fallback to config if request details are not available or sufficient
+	s.logger.Warn("Falling back to ServerURL from config for OIDC discovery as request context or details are insufficient.", zap.String("fallbackURL", s.config.ServerURL))
 	return s.config.ServerURL
 }
 
