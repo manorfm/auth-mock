@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/manorfm/auth-mock/internal/domain"
@@ -11,15 +12,31 @@ import (
 	"go.uber.org/zap"
 )
 
+// LoginResponsePayload defines the structure for the login response JSON body
+type LoginResponsePayload struct {
+	AccessToken string `json:"access_token"`
+}
+
 type HandlerAuth struct {
 	authService domain.AuthService
 	logger      *zap.Logger
+	// TODO: Idealmente, a configuração deveria ser injetada de forma mais estruturada.
+	// Por agora, vamos assumir que podemos acessá-la ou definir um valor padrão.
+	// Para este exemplo, vou adicionar um campo para a duração do refresh token.
+	// Em uma aplicação real, isso viria do objeto de configuração.
+	refreshTokenDuration time.Duration
 }
 
-func NewAuthHandler(authService domain.AuthService, logger *zap.Logger) *HandlerAuth {
+func NewAuthHandler(authService domain.AuthService, logger *zap.Logger /* TODO: Adicionar config aqui */) *HandlerAuth {
+	// TODO: Obter refreshTokenDuration da configuração
+	// Exemplo: refreshTokenDuration := cfg.JWTRefreshDuration
+	// Por agora, vou definir um valor fixo, mas isso DEVE ser da config.
+	refreshTokenDuration := 24 * 7 * time.Hour // Exemplo: 7 dias
+
 	return &HandlerAuth{
-		authService: authService,
-		logger:      logger,
+		authService:          authService,
+		logger:               logger,
+		refreshTokenDuration: refreshTokenDuration,
 	}
 }
 
@@ -95,9 +112,37 @@ func (h *HandlerAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("failed to encode response", zap.Error(err))
+	// Verificar o tipo de resultado. Poderia ser *domain.TokenPair ou *domain.MFATicket.
+	switch tokenResult := result.(type) {
+	case *domain.TokenPair:
+		// Se for TokenPair, definir o refresh token como cookie e retornar apenas o access token.
+		http.SetCookie(w, &http.Cookie{
+			Name:     "refresh_token",
+			Value:    tokenResult.RefreshToken,
+			Expires:  time.Now().Add(h.refreshTokenDuration),
+			HttpOnly: true,
+			Secure:   true, // Assumir true para produção; pode ser condicional baseado no ambiente.
+			Path:     "/",  // Ajustar se necessário um path mais específico para refresh.
+			SameSite: http.SameSiteStrictMode,
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(LoginResponsePayload{AccessToken: tokenResult.AccessToken}); err != nil {
+			h.logger.Error("failed to encode login response", zap.Error(err))
+			errors.RespondWithError(w, domain.ErrInternal)
+			return
+		}
+	case *domain.MFATicket:
+		// Se for MFATicket, retornar o ticket como antes.
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(tokenResult); err != nil {
+			h.logger.Error("failed to encode mfa ticket response", zap.Error(err))
+			errors.RespondWithError(w, domain.ErrInternal)
+			return
+		}
+	default:
+		// Tipo de resultado inesperado do AuthService.Login
+		h.logger.Error("unexpected result type from authService.Login", zap.Any("result", result))
 		errors.RespondWithError(w, domain.ErrInternal)
 		return
 	}
@@ -235,9 +280,20 @@ func (h *HandlerAuth) VerifyMFAHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Definir o refresh token como cookie e retornar apenas o access token.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    tokenPair.RefreshToken,
+		Expires:  time.Now().Add(h.refreshTokenDuration), // Usar a mesma duração do login
+		HttpOnly: true,
+		Secure:   true, // Assumir true para produção
+		Path:     "/",  // Ajustar se necessário
+		SameSite: http.SameSiteStrictMode,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tokenPair); err != nil {
-		h.logger.Error("failed to encode response", zap.Error(err))
+	if err := json.NewEncoder(w).Encode(LoginResponsePayload{AccessToken: tokenPair.AccessToken}); err != nil {
+		h.logger.Error("failed to encode verify mfa response", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrInternal)
 		return
 	}

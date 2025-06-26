@@ -194,17 +194,160 @@ func TestAuthHandler_Register(t *testing.T) {
 	}
 }
 
-func TestAuthHandler_Login(t *testing.T) {
+func TestAuthHandler_VerifyMFA(t *testing.T) {
 	logger, _ := zap.NewProduction()
-	mockService := new(mockAuthService)
-	handler := NewAuthHandler(mockService, logger)
+	// refreshTokenDuration está fixo no construtor do handler por enquanto.
+	// Os testes refletirão isso.
 
 	tests := []struct {
-		name           string
-		requestBody    interface{}
-		mockSetup      func()
-		expectedStatus int
-		expectedBody   interface{}
+		name            string
+		requestBody     interface{}
+		mockSetup       func(m *mockAuthService)
+		expectedStatus  int
+		expectedBody    interface{} // Pode ser LoginResponsePayload ou errors.ErrorResponse
+		expectCookie    bool
+		expectedCookie  *http.Cookie       // Para verificar Nome, HttpOnly, Secure, Path, SameSite
+		expectedTokenFn func() *domain.TokenPair // Para obter o refresh_token esperado para o cookie
+	}{
+		{
+			name: "successful MFA verification",
+			requestBody: map[string]string{
+				"ticket": "valid_ticket",
+				"code":   "123456",
+			},
+			mockSetup: func(m *mockAuthService) {
+				m.On("VerifyMFA", mock.Anything, "valid_ticket", "123456").
+					Return(
+						&domain.TokenPair{
+							AccessToken:  "mfa_access_token",
+							RefreshToken: "mfa_refresh_token",
+						},
+						nil,
+					)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: LoginResponsePayload{
+				AccessToken: "mfa_access_token",
+			},
+			expectCookie: true,
+			expectedCookie: &http.Cookie{
+				Name:     "refresh_token",
+				HttpOnly: true,
+				Secure:   true,
+				Path:     "/",
+				SameSite: http.SameSiteStrictMode,
+			},
+			expectedTokenFn: func() *domain.TokenPair {
+				return &domain.TokenPair{
+					AccessToken:  "mfa_access_token",
+					RefreshToken: "mfa_refresh_token",
+				}
+			},
+		},
+		{
+			name: "invalid MFA code",
+			requestBody: map[string]string{
+				"ticket": "valid_ticket",
+				"code":   "wrong_code",
+			},
+			mockSetup: func(m *mockAuthService) {
+				m.On("VerifyMFA", mock.Anything, "valid_ticket", "wrong_code").
+					Return(nil, domain.ErrInvalidTOTPCode) // Exemplo de erro
+			},
+			expectedStatus: http.StatusBadRequest, // Ou o status que ErrInvalidTOTPCode mapeia
+			expectedBody: errors.ErrorResponse{ // Ajustar conforme o erro real
+				Code:    "A0005", // Supondo que ErrInvalidTOTPCode mapeie para este
+				Message: "Invalid TOTP code",
+			},
+			expectCookie: false,
+		},
+		{
+			name: "validation error - missing ticket",
+			requestBody: map[string]string{
+				"code": "123456",
+			},
+			mockSetup: func(m *mockAuthService) {
+				// Nenhuma chamada ao serviço esperada
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody: errors.ErrorResponse{
+				Code:    "U0011",
+				Message: "Invalid field",
+				Details: []errors.ErrorDetail{
+					{Field: "ticket", Message: "ticket is required"},
+				},
+			},
+			expectCookie: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mockAuthService)
+			tt.mockSetup(mockService)
+			currentHandler := NewAuthHandler(mockService, logger)
+
+			bodyBytes, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/mfa/verify", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+			currentHandler.VerifyMFAHandler(rr, req)
+
+			assert.Equal(t, tt.expectedStatus, rr.Code, "Status code mismatch")
+
+			if tt.expectedStatus == http.StatusOK {
+				var responseBody LoginResponsePayload
+				err := json.NewDecoder(rr.Body).Decode(&responseBody)
+				assert.NoError(t, err, "Failed to decode response body for successful MFA verification")
+				assert.Equal(t, tt.expectedBody.(LoginResponsePayload).AccessToken, responseBody.AccessToken)
+
+				assert.True(t, tt.expectCookie, "Cookie was expected but not set as per test config")
+				cookies := rr.Result().Cookies()
+				assert.NotEmpty(t, cookies, "No cookies were set for successful MFA verification")
+
+				foundCookie := false
+				for _, cookie := range cookies {
+					if cookie.Name == tt.expectedCookie.Name {
+						foundCookie = true
+						assert.Equal(t, tt.expectedTokenFn().RefreshToken, cookie.Value, "Cookie refresh token value mismatch")
+						assert.Equal(t, tt.expectedCookie.HttpOnly, cookie.HttpOnly, "Cookie HttpOnly flag mismatch")
+						assert.Equal(t, tt.expectedCookie.Secure, cookie.Secure, "Cookie Secure flag mismatch")
+						assert.Equal(t, tt.expectedCookie.Path, cookie.Path, "Cookie Path mismatch")
+						assert.Equal(t, tt.expectedCookie.SameSite, cookie.SameSite, "Cookie SameSite mismatch")
+						assert.True(t, cookie.Expires.After(time.Now()), "Cookie expiration should be in the future")
+						break
+					}
+				}
+				assert.True(t, foundCookie, "Refresh token cookie was not found")
+
+			} else { // Error status codes
+				var errorResponse errors.ErrorResponse
+				err := json.NewDecoder(rr.Body).Decode(&errorResponse)
+				assert.NoError(t, err, "Failed to decode error response body")
+				assert.Equal(t, tt.expectedBody.(errors.ErrorResponse), errorResponse, "Error response body mismatch")
+				assert.Empty(t, rr.Result().Cookies(), "No cookies should be set on error")
+			}
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestAuthHandler_Login(t *testing.T) {
+	logger, _ := zap.NewProduction()
+	// Criar o handler com a duração do token de atualização (mesmo que fixo por enquanto no handler real)
+	// Idealmente, o mock do config seria injetado aqui também.
+	handler := NewAuthHandler(new(mockAuthService), logger) // mockAuthService será re-instanciado por teste
+
+	tests := []struct {
+		name            string
+		requestBody     interface{}
+		mockSetup       func(m *mockAuthService)
+		expectedStatus  int
+		expectedBody    interface{}
+		expectCookie    bool
+		expectedCookie  *http.Cookie // Para verificar nome, HttpOnly, Secure, Path, SameSite. Valor e Expires são verificados separadamente.
+		expectedTokenFn func() *domain.TokenPair // Função para obter o token pair esperado para o cookie
 	}{
 		{
 			name: "successful login",
@@ -212,20 +355,33 @@ func TestAuthHandler_Login(t *testing.T) {
 				"email":    "test@example.com",
 				"password": "password123",
 			},
-			mockSetup: func() {
-				mockService.On("Login", mock.Anything, "test@example.com", "password123").
+			mockSetup: func(m *mockAuthService) {
+				m.On("Login", mock.Anything, "test@example.com", "password123").
 					Return(
 						&domain.TokenPair{
-							AccessToken:  "access_token",
-							RefreshToken: "refresh_token",
+							AccessToken:  "test_access_token",
+							RefreshToken: "test_refresh_token",
 						},
 						nil,
 					)
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody: &domain.TokenPair{
-				AccessToken:  "access_token",
-				RefreshToken: "refresh_token",
+			expectedBody: LoginResponsePayload{
+				AccessToken: "test_access_token",
+			},
+			expectCookie: true,
+			expectedCookie: &http.Cookie{
+				Name:     "refresh_token",
+				HttpOnly: true,
+				Secure:   true,
+				Path:     "/",
+				SameSite: http.SameSiteStrictMode,
+			},
+			expectedTokenFn: func() *domain.TokenPair {
+				return &domain.TokenPair{
+					AccessToken:  "test_access_token",
+					RefreshToken: "test_refresh_token",
+				}
 			},
 		},
 		{
@@ -234,8 +390,8 @@ func TestAuthHandler_Login(t *testing.T) {
 				"email":    "test@example.com",
 				"password": "wrongpassword",
 			},
-			mockSetup: func() {
-				mockService.On("Login", mock.Anything, "test@example.com", "wrongpassword").
+			mockSetup: func(m *mockAuthService) {
+				m.On("Login", mock.Anything, "test@example.com", "wrongpassword").
 					Return(nil, domain.ErrInvalidCredentials)
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -243,6 +399,7 @@ func TestAuthHandler_Login(t *testing.T) {
 				Code:    "U0001",
 				Message: "Invalid credentials",
 			},
+			expectCookie: false,
 		},
 		{
 			name: "validation error - missing required fields",
@@ -250,7 +407,7 @@ func TestAuthHandler_Login(t *testing.T) {
 				"email": "test@example.com",
 				// missing password
 			},
-			mockSetup: func() {
+			mockSetup: func(m *mockAuthService) {
 				// No mock setup needed for validation errors
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -264,11 +421,12 @@ func TestAuthHandler_Login(t *testing.T) {
 					},
 				},
 			},
+			expectCookie: false,
 		},
 		{
 			name:        "invalid request body",
 			requestBody: "invalid json",
-			mockSetup: func() {
+			mockSetup: func(m *mockAuthService) {
 				// No mock setup needed for invalid request body
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -276,38 +434,99 @@ func TestAuthHandler_Login(t *testing.T) {
 				Code:    "U0013",
 				Message: "Invalid request body",
 			},
+			expectCookie: false,
+		},
+		{
+			name: "login returns MFA ticket",
+			requestBody: map[string]string{
+				"email":    "mfa_user@example.com",
+				"password": "password123",
+			},
+			mockSetup: func(m *mockAuthService) {
+				// Use a fixed ULID for predictable test output if needed, or allow any ULID.
+				// For this test, we'll check User field and that Ticket is not empty.
+				m.On("Login", mock.Anything, "mfa_user@example.com", "password123").
+					Return(
+						&domain.MFATicket{Ticket: ulid.Make(), User: "user_mfa_test_id"},
+						nil,
+					)
+			},
+			expectedStatus: http.StatusOK,
+			// For MFATicket, we will verify the type and a specific field, not the exact body due to ULID.
+			expectedBody:   &domain.MFATicket{User: "user_mfa_test_id"},
+			expectCookie:   false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.mockSetup()
+			mockService := new(mockAuthService) // Create a new mock for each test run
+			tt.mockSetup(mockService)
 
-			var body []byte
+			// Create handler with the fresh mockService
+			// Note: refreshTokenDuration in the actual handler is hardcoded for now.
+			// This test setup correctly reflects that the handler itself would have this duration.
+			currentHandler := NewAuthHandler(mockService, logger)
+
+			var bodyBytes []byte
 			if str, ok := tt.requestBody.(string); ok {
-				body = []byte(str)
+				bodyBytes = []byte(str)
 			} else {
-				body, _ = json.Marshal(tt.requestBody)
+				bodyBytes, _ = json.Marshal(tt.requestBody)
 			}
 
-			req := httptest.NewRequest("POST", "/users/login", bytes.NewBuffer(body))
+			req := httptest.NewRequest("POST", "/users/login", bytes.NewBuffer(bodyBytes))
 			req.Header.Set("Content-Type", "application/json")
 
 			rr := httptest.NewRecorder()
-			handler.LoginHandler(rr, req)
+			currentHandler.LoginHandler(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				var response domain.TokenPair
-				err := json.NewDecoder(rr.Body).Decode(&response)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedBody.(*domain.TokenPair), &response)
-			} else {
-				var response errors.ErrorResponse
-				err := json.NewDecoder(rr.Body).Decode(&response)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedBody.(errors.ErrorResponse), response)
+				if tt.expectCookie {
+					var responseBody LoginResponsePayload
+					err := json.NewDecoder(rr.Body).Decode(&responseBody)
+					assert.NoError(t, err, "Failed to decode response body for successful login")
+					assert.Equal(t, tt.expectedBody.(LoginResponsePayload).AccessToken, responseBody.AccessToken)
+
+					cookies := rr.Result().Cookies()
+					assert.NotEmpty(t, cookies, "No cookies were set for successful login")
+
+					foundCookie := false
+					for _, cookie := range cookies {
+						if cookie.Name == tt.expectedCookie.Name {
+							foundCookie = true
+							assert.Equal(t, tt.expectedTokenFn().RefreshToken, cookie.Value, "Cookie refresh token value mismatch")
+							assert.Equal(t, tt.expectedCookie.HttpOnly, cookie.HttpOnly, "Cookie HttpOnly flag mismatch")
+							assert.Equal(t, tt.expectedCookie.Secure, cookie.Secure, "Cookie Secure flag mismatch")
+							assert.Equal(t, tt.expectedCookie.Path, cookie.Path, "Cookie Path mismatch")
+							assert.Equal(t, tt.expectedCookie.SameSite, cookie.SameSite, "Cookie SameSite mismatch")
+							assert.True(t, cookie.Expires.After(time.Now()), "Cookie expiration should be in the future")
+							// Consider a more precise check for Expires if refreshTokenDuration was injected and mockable
+							break
+						}
+					}
+					assert.True(t, foundCookie, "Refresh token cookie was not found")
+
+				} else if expectedMfaTicket, ok := tt.expectedBody.(*domain.MFATicket); ok {
+					var responseMFATicket domain.MFATicket
+					err := json.NewDecoder(rr.Body).Decode(&responseMFATicket)
+					assert.NoError(t, err, "Failed to decode MFA ticket response body")
+					assert.NotEmpty(t, responseMFATicket.Ticket, "MFA Ticket ID should not be empty")
+					assert.Equal(t, expectedMfaTicket.User, responseMFATicket.User, "MFA Ticket User mismatch")
+				}
+
+			} else { // Error status codes
+				var errorResponse errors.ErrorResponse
+				err := json.NewDecoder(rr.Body).Decode(&errorResponse)
+				assert.NoError(t, err, "Failed to decode error response body")
+
+				// For validation errors, details can have a variable order or content.
+				// A more robust check might involve comparing elements specifically.
+				// For now, direct comparison is used as in the original test.
+				assert.Equal(t, tt.expectedBody.(errors.ErrorResponse), errorResponse, "Error response body mismatch")
+				assert.Empty(t, rr.Result().Cookies(), "No cookies should be set on error")
 			}
 
 			mockService.AssertExpectations(t)

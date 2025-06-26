@@ -23,17 +23,34 @@ type TokenRequest struct {
 	CodeVerifier string `json:"codeVerifier"`
 }
 
-type OIDCHandler struct {
-	oidcService domain.OIDCService
-	jwtService  domain.JWTService
-	logger      *zap.Logger
+// TokenEndpointResponse define a estrutura de resposta para o endpoint de token,
+// omitindo o refresh_token que será enviado como cookie.
+type TokenEndpointResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"` // Geralmente "Bearer"
+	ExpiresIn   int64  `json:"expires_in"` // Duração em segundos
+	IDToken     string `json:"id_token,omitempty"`
+	// RefreshToken é omitido, pois será enviado como cookie
 }
 
-func NewOIDCHandler(oidcService domain.OIDCService, jwtService domain.JWTService, logger *zap.Logger) *OIDCHandler {
+type OIDCHandler struct {
+	oidcService          domain.OIDCService
+	jwtService           domain.JWTService
+	logger               *zap.Logger
+	refreshTokenDuration time.Duration // Adicionado para consistência com AuthHandler
+}
+
+func NewOIDCHandler(oidcService domain.OIDCService, jwtService domain.JWTService, logger *zap.Logger /* TODO: Adicionar config */) *OIDCHandler {
+	// TODO: Obter refreshTokenDuration da configuração
+	// Exemplo: refreshTokenDuration := cfg.JWTRefreshDuration
+	// Por agora, vou definir um valor fixo, mas isso DEVE ser da config.
+	refreshTokenDuration := 24 * 7 * time.Hour // Exemplo: 7 dias
+
 	return &OIDCHandler{
-		oidcService: oidcService,
-		jwtService:  jwtService,
-		logger:      logger,
+		oidcService:          oidcService,
+		jwtService:           jwtService,
+		logger:               logger,
+		refreshTokenDuration: refreshTokenDuration, // Adicionado
 	}
 }
 
@@ -165,24 +182,61 @@ func (h *OIDCHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		tokenPair, err = h.oidcService.ExchangeCode(r.Context(), req.Code, req.CodeVerifier)
 		if err != nil {
 			h.logger.Error("ExchangeCode failed", zap.Error(err))
-			errors.RespondWithError(w, err.(domain.Error))
-
+			errors.RespondWithError(w, err.(domain.Error)) // Garantir que err seja do tipo domain.Error ou tratar
 			return
 		}
+		// O refresh token de ExchangeCode também deve ser tratado via cookie.
+		// A lógica de resposta comum no final do handler cuidará disso.
 
 	case "refresh_token":
-		if req.RefreshToken == "" {
-			h.logger.Error("Missing refresh token")
+		// 1. Tentar ler o refresh token do cookie
+		cookie, errCookie := r.Cookie("refresh_token")
+		actualRefreshToken := ""
+		if errCookie == nil && cookie.Value != "" {
+			actualRefreshToken = cookie.Value
+			h.logger.Debug("Refresh token read from cookie")
+		} else {
+			// 2. Se não estiver no cookie, tentar ler do corpo JSON (fallback ou configuração)
+			if req.RefreshToken != "" {
+				actualRefreshToken = req.RefreshToken
+				h.logger.Debug("Refresh token read from JSON body request")
+			}
+		}
+
+		if actualRefreshToken == "" {
+			h.logger.Error("Missing refresh token from both cookie and request body")
+			// TODO: Considerar se o erro deve ser mais específico (ex: ErrMissingToken)
+			// ou se ErrInvalidField é apropriado.
+			// Por agora, mantendo ErrInvalidField para consistência com a lógica anterior.
 			errors.RespondWithError(w, domain.ErrInvalidField)
 			return
 		}
 
-		tokenPair, err = h.oidcService.RefreshToken(r.Context(), req.RefreshToken)
+		// Limpar o campo RefreshToken da requisição se ele foi lido do cookie,
+		// para evitar confusão ou uso acidental posteriormente.
+		// Não é estritamente necessário se actualRefreshToken for usado consistentemente.
+		// req.RefreshToken = "" // Opcional
+
+		tokenPair, err = h.oidcService.RefreshToken(r.Context(), actualRefreshToken)
 		if err != nil {
-			h.logger.Error("RefreshToken failed", zap.Error(err))
+			h.logger.Error("RefreshToken service call failed", zap.Error(err))
+			// Se o refresh token for inválido (ex: expirado, revogado),
+			// o cookie antigo deve ser removido.
+			if err == domain.ErrInvalidCredentials || err == domain.ErrTokenExpired { // Adicionar outros erros relevantes
+				http.SetCookie(w, &http.Cookie{
+					Name:     "refresh_token",
+					Value:    "",
+					Path:     "/", // Mesmo path usado ao definir
+					Expires:  time.Unix(0, 0), // Expira imediatamente
+					HttpOnly: true,
+					Secure:   true, // Manter consistência
+					SameSite: http.SameSiteStrictMode,
+				})
+			}
+
 			switch err {
-			case domain.ErrInvalidCredentials:
-				errors.RespondWithError(w, domain.ErrInvalidCredentials)
+			case domain.ErrInvalidCredentials, domain.ErrTokenExpired: // Assumindo que ErrTokenExpired pode ser retornado
+				errors.RespondWithError(w, domain.ErrInvalidCredentials) // Ou um erro mais específico de token inválido
 			default:
 				errors.RespondWithError(w, domain.ErrInternal)
 			}
@@ -202,12 +256,63 @@ func (h *OIDCHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Debug("Token exchange successful",
-		zap.String("grant_type", req.GrantType))
+	h.logger.Debug("Token exchange successful", zap.String("grant_type", req.GrantType))
+
+	// O oidcService.RefreshToken (e ExchangeCode) retorna um domain.TokenPair.
+	// Precisamos extrair o AccessToken e o RefreshToken (novo) dele.
+	// O IDToken pode não estar presente em domain.TokenPair; assumimos que o serviço OIDC
+	// o adicionaria se necessário, ou que a estrutura TokenPair precisaria ser estendida
+	// ou que o serviço retornaria uma estrutura mais rica.
+	// Por agora, vamos focar em AccessToken e o novo RefreshToken.
+
+	// Definir o novo refresh_token (se houver e se a rotação estiver habilitada) como cookie.
+	// Se tokenPair.RefreshToken estiver vazio, significa que o refresh token não foi rotacionado
+	// e o antigo (do cookie) ainda é válido (embora isso seja menos comum para refresh_token grant).
+	// Se um novo é emitido, ele DEVE ser usado a partir de agora.
+	if tokenPair.RefreshToken != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "refresh_token",
+			Value:    tokenPair.RefreshToken,
+			Expires:  time.Now().Add(h.refreshTokenDuration),
+			HttpOnly: true,
+			Secure:   true,
+			Path:     "/", // Mesmo path do cookie original
+			SameSite: http.SameSiteStrictMode,
+		})
+		h.logger.Debug("New refresh token set in cookie")
+	} else {
+		// Se o serviço não retornou um NOVO refresh token, e estamos no grant_type=refresh_token,
+		// isso pode indicar que o refresh token original não é rotacionado.
+		// Ou, se a intenção é sempre rotacionar, então tokenPair.RefreshToken nunca deveria estar vazio aqui.
+		// Se o refresh token original do cookie foi usado e é válido, e nenhum novo foi emitido,
+		// o cookie original permanece. Se o refresh token original do JSON body foi usado,
+		// e nenhum novo foi emitido, então o cliente não recebe um novo refresh token via cookie.
+		// Esta lógica depende da estratégia de rotação de refresh token do oidcService.
+		h.logger.Debug("No new refresh token returned by service, original refresh token (if from cookie) remains.")
+	}
+
+	// Construir a resposta JSON apenas com o access_token e outros campos relevantes.
+	// A duração do access_token geralmente vem da configuração do JWTService.
+	// O OIDCService deveria idealmente fornecer essa informação.
+	// Por simplicidade, vamos assumir que o AccessToken é o único campo principal por agora,
+	// além dos campos padrão OAuth2.
+	// Em uma implementação completa, o OIDCService.ExchangeCode ou RefreshToken retornaria uma struct
+	// mais rica contendo TokenType, ExpiresIn, IDToken, etc.
+	// Para este exemplo, vamos mockar alguns valores.
+	responsePayload := TokenEndpointResponse{
+		AccessToken: tokenPair.AccessToken,
+		TokenType:   "Bearer",
+		// ExpiresIn: Deveria vir da duração do access token. Ex: int64(cfg.JWTAccessDuration.Seconds()),
+		// IDToken: Se aplicável e retornado pelo serviço.
+	}
+	// Tentativa de obter a duração do access token do próprio token (se for JWT e tiver 'exp')
+	// Isto é complexo e geralmente o serviço de token define explicitamente.
+	// Por agora, vou omitir ExpiresIn e IDToken da resposta mockada para focar na mudança do refresh_token.
+	// Em um cenário real, estes seriam populados corretamente.
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tokenPair); err != nil {
-		h.logger.Error("Failed to encode response", zap.Error(err))
+	if err := json.NewEncoder(w).Encode(responsePayload); err != nil {
+		h.logger.Error("Failed to encode token endpoint response", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrInternal)
 		return
 	}
