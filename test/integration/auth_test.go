@@ -69,10 +69,15 @@ func TestAuthService_Integration(t *testing.T) {
 	totpGenerator := totp.NewGenerator(logger)
 	totpService := application.NewTOTPService(totpRepo, totpGenerator, logger)
 
+	// Setup account service
+	accountRepo := repository.NewAccountRepository()
+	accountService := application.NewAccountService(accountRepo, logger)
+
 	// Setup auth service
 	authService := application.NewAuthService(
 		cfg,
 		userRepo,
+		accountService,
 		verificationRepo,
 		jwtService,
 		emailSvc,

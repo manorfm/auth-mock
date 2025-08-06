@@ -30,6 +30,7 @@ A comprehensive mock authentication service designed for testing and development
 - Email verification system
 - Password reset functionality
 - Rate limiting with configurable thresholds
+- Account management system with automatic account creation
 
 ### Security Features
 - In-memory RSA key pairs (2048-bit by default)
@@ -216,6 +217,10 @@ http://localhost:8080/swagger/index.html
 - `POST /api/totp/verify` - Verify TOTP code
 - `POST /api/totp/verify-backup` - Verify TOTP backup code
 - `POST /api/totp/disable` - Disable TOTP for user
+- `GET /api/accounts` - Get current user's account
+- `GET /api/accounts/me` - Get current user's account with user data and MFA status
+- `PUT /api/accounts` - Update current user's account status
+- `DELETE /api/accounts` - Delete current user's account
 
 #### Admin Endpoints (Requires Admin Role)
 - `GET /api/users` - List all users
@@ -294,6 +299,9 @@ Common error codes:
 - `U0055` - MFA ticket expired
 - `U0056` - MFA ticket already used
 - `U0057` - Invalid user ID
+- `U0058` - Failed to create account
+- `U0059` - Failed to update account
+- `U0060` - Failed to delete account
 
 ## Project Structure
 

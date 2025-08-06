@@ -232,6 +232,47 @@ func (m *mockMFATicketRepository) Delete(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+type mockAccountService struct {
+	mock.Mock
+}
+
+// Ensure mockAccountService implements domain.AccountService
+var _ domain.AccountService = (*mockAccountService)(nil)
+
+func (m *mockAccountService) CreateAccount(ctx context.Context, userID ulid.ULID) (*domain.Account, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Account), args.Error(1)
+}
+
+func (m *mockAccountService) GetAccount(ctx context.Context, id ulid.ULID) (*domain.Account, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Account), args.Error(1)
+}
+
+func (m *mockAccountService) GetAccountByUserID(ctx context.Context, userID ulid.ULID) (*domain.Account, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Account), args.Error(1)
+}
+
+func (m *mockAccountService) UpdateAccount(ctx context.Context, account *domain.Account) error {
+	args := m.Called(ctx, account)
+	return args.Error(0)
+}
+
+func (m *mockAccountService) DeleteAccount(ctx context.Context, id ulid.ULID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func TestAuthService_Register(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -294,9 +335,13 @@ func TestAuthService_Register(t *testing.T) {
 				EmailEnabled: tt.emailEnabled,
 			}
 
+			mockAccountSvc := new(mockAccountService)
+			mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
 			service := NewAuthService(
 				cfg,
 				mockUserRepo,
+				mockAccountSvc,
 				mockVerificationRepo,
 				nil,
 				mockEmailSvc,
@@ -405,9 +450,13 @@ func TestAuthService_VerifyEmail(t *testing.T) {
 			mockMFATicketRepo := new(mockMFATicketRepository)
 			tt.setupMocks(mockUserRepo, mockVerificationRepo, mockEmailSvc)
 
+			mockAccountSvc := new(mockAccountService)
+			mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
 			service := NewAuthService(
 				cfg,
 				mockUserRepo,
+				mockAccountSvc,
 				mockVerificationRepo,
 				nil,
 				mockEmailSvc,
@@ -502,9 +551,13 @@ func TestAuthService_RequestPasswordReset(t *testing.T) {
 			mockMFATicketRepo := new(mockMFATicketRepository)
 			tt.setupMocks(mockUserRepo, mockVerificationRepo, mockEmailSvc)
 
+			mockAccountSvc := new(mockAccountService)
+			mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
 			service := NewAuthService(
 				cfg,
 				mockUserRepo,
+				mockAccountSvc,
 				mockVerificationRepo,
 				nil,
 				mockEmailSvc,
@@ -619,9 +672,13 @@ func TestAuthService_ResetPassword(t *testing.T) {
 
 			tt.setupMocks(mockUserRepo, mockVerificationRepo)
 
+			mockAccountSvc := new(mockAccountService)
+			mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
 			service := NewAuthService(
 				cfg,
 				mockUserRepo,
+				mockAccountSvc,
 				mockVerificationRepo,
 				mockJWTService,
 				mockEmailService,
@@ -727,9 +784,13 @@ func TestAuthService_Login(t *testing.T) {
 			mockEmailSvc := new(mockEmailService)
 			mockTOTPSvc := new(authMockTOTPService)
 			mockMFATicketRepo := new(mockMFATicketRepository)
+			mockAccountSvc := new(mockAccountService)
+			mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
 			service := NewAuthService(
 				cfg,
 				repo,
+				mockAccountSvc,
 				nil,
 				mockJWTService,
 				mockEmailSvc,

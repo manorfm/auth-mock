@@ -14,6 +14,7 @@ import (
 type AuthService struct {
 	config           *config.Config
 	userRepo         domain.UserRepository
+	accountService   domain.AccountService
 	verificationRepo domain.VerificationCodeRepository
 	jwtService       domain.JWTService
 	emailService     domain.EmailService
@@ -25,6 +26,7 @@ type AuthService struct {
 func NewAuthService(
 	config *config.Config,
 	userRepo domain.UserRepository,
+	accountService domain.AccountService,
 	verificationRepo domain.VerificationCodeRepository,
 	jwtService domain.JWTService,
 	emailService domain.EmailService,
@@ -35,6 +37,7 @@ func NewAuthService(
 	return &AuthService{
 		config:           config,
 		userRepo:         userRepo,
+		accountService:   accountService,
 		verificationRepo: verificationRepo,
 		jwtService:       jwtService,
 		emailService:     emailService,
@@ -85,6 +88,17 @@ func (s *AuthService) Register(ctx context.Context, name, email, password, phone
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, err
+	}
+
+	// Create account for the user
+	_, err = s.accountService.CreateAccount(ctx, user.ID)
+	if err != nil {
+		// If account creation fails, delete the user and return error
+		s.logger.Error("Failed to create account, rolling back user creation", zap.Error(err))
+		if deleteErr := s.userRepo.Delete(ctx, user.ID); deleteErr != nil {
+			s.logger.Error("Failed to delete user after account creation failure", zap.Error(deleteErr))
+		}
+		return nil, domain.ErrAccountCreationFailed
 	}
 
 	// Generate verification code

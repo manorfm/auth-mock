@@ -177,6 +177,12 @@ var (
 
 	// ErrInvalidUserID is returned when the user ID is invalid
 	ErrInvalidUserID = NewBusinessError("U0057", "Invalid user ID")
+
+	// Account related errors
+	ErrAccountNotFound        = errNotFound("Account")
+	ErrAccountCreationFailed  = NewInfraError("U0058", "Failed to create account")
+	ErrAccountUpdateFailed    = NewInfraError("U0059", "Failed to update account")
+	ErrAccountDeleteFailed    = NewInfraError("U0060", "Failed to delete account")
 )
 
 func (e *BusinessError) GetCode() string {

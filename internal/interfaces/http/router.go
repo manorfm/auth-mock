@@ -45,6 +45,7 @@ func NewRouter(
 	verificationRepo := repository.NewVerificationCodeRepository(logger)
 	totpRepo := repository.NewTOTPRepository(logger)
 	mfaTicketRepo := repository.NewMFATicketRepository(logger)
+	accountRepo := repository.NewAccountRepository()
 
 	totpGenerator := totp.NewGenerator(logger)
 	emailTemplate := email.NewEmailTemplate(&cfg.SMTP, logger)
@@ -52,12 +53,14 @@ func NewRouter(
 	totpService := application.NewTOTPService(totpRepo, totpGenerator, logger)
 	userService := application.NewUserService(userRepo, logger)
 	oauth2Service := application.NewOAuth2Service(oauthRepo, logger)
-	authService := application.NewAuthService(cfg, userRepo, verificationRepo, jwtService, emailTemplate, totpService, mfaTicketRepo, logger)
+	accountService := application.NewAccountService(accountRepo, logger)
+	authService := application.NewAuthService(cfg, userRepo, accountService, verificationRepo, jwtService, emailTemplate, totpService, mfaTicketRepo, logger)
 	oidcService := application.NewOIDCService(oauth2Service, jwtService, userRepo, totpService, cfg, logger)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, logger)
 	userHandler := handlers.NewUserHandler(userService, logger)
+	accountHandler := handlers.NewAccountHandler(accountService, userService, totpService, logger)
 	oidcHandler := handlers.NewOIDCHandler(oidcService, jwtService, logger)
 	oauth2Handler := handlers.NewOAuth2Handler(oauthRepo, logger)
 	totpHandler := handlers.NewTOTPHandler(totpService, logger)
@@ -159,6 +162,12 @@ func NewRouter(
 			r.Post("/totp/verify", totpHandler.VerifyTOTP)
 			r.Post("/totp/verify-backup", totpHandler.VerifyBackupCode)
 			r.Post("/totp/disable", totpHandler.DisableTOTP)
+
+			// Account routes
+			r.Get("/accounts", accountHandler.GetAccountsHandler)
+			r.Get("/accounts/me", accountHandler.GetMeHandler)
+			r.Put("/accounts", accountHandler.UpdateAccountHandler)
+			r.Delete("/accounts", accountHandler.DeleteAccountHandler)
 		})
 	})
 
