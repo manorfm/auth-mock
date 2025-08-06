@@ -405,7 +405,7 @@ func (m *mockJWTService) GetPublicKey() *rsa.PublicKey {
 	return nil
 }
 
-func (m *mockJWTService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
+func (m *mockJWTService) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
 	return nil, nil
 }
 

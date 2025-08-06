@@ -142,7 +142,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (interf
 	if err != nil {
 		// If TOTP is not enabled, proceed with normal login
 		if err == domain.ErrTOTPNotEnabled || secret == "" {
-			tokenPair, err := s.jwtService.GenerateTokenPair(user.ID, user.Roles)
+			tokenPair, err := s.jwtService.GenerateTokenPair(ctx, user)
 			if err != nil {
 				return nil, err
 			}
@@ -349,7 +349,7 @@ func (s *AuthService) VerifyMFA(ctx context.Context, ticketID, code string) (*do
 	}
 
 	// Generate token pair with MFA AMR
-	tokenPair, err := s.jwtService.GenerateTokenPair(user.ID, user.Roles)
+	tokenPair, err := s.jwtService.GenerateTokenPair(ctx, user)
 	if err != nil {
 		return nil, err
 	}

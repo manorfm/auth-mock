@@ -12,7 +12,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/manorfm/auth-mock/internal/infrastructure/config"
-	"github.com/oklog/ulid/v2"
 )
 
 // JWT defines the interface for JWT operations
@@ -178,7 +177,7 @@ func generateKeyID(key *rsa.PrivateKey) string {
 type JWTService interface {
 	ValidateToken(token string) (*Claims, error)
 	GetJWKS(ctx context.Context) (map[string]interface{}, error)
-	GenerateTokenPair(userID ulid.ULID, roles []string) (*TokenPair, error)
+	GenerateTokenPair(ctx context.Context, user *User) (*TokenPair, error)
 	GetPublicKey() *rsa.PublicKey
 	RotateKeys() error
 	BlacklistToken(tokenID string, expiresAt time.Time) error

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -16,14 +17,16 @@ type HandlerAccount struct {
 	accountService domain.AccountService
 	userService    domain.UserService
 	totpService    domain.TOTPService
+	jwtService     domain.JWTService
 	logger         *zap.Logger
 }
 
-func NewAccountHandler(accountService domain.AccountService, userService domain.UserService, totpService domain.TOTPService, logger *zap.Logger) *HandlerAccount {
+func NewAccountHandler(accountService domain.AccountService, userService domain.UserService, totpService domain.TOTPService, jwtService domain.JWTService, logger *zap.Logger) *HandlerAccount {
 	return &HandlerAccount{
 		accountService: accountService,
 		userService:    userService,
 		totpService:    totpService,
+		jwtService:     jwtService,
 		logger:         logger,
 	}
 }
@@ -128,16 +131,31 @@ func (h *HandlerAccount) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 // GetMeHandler returns the current user's account with user data and MFA status
 func (h *HandlerAccount) GetMeHandler(w http.ResponseWriter, r *http.Request) {
-	// Get user ID from context (set by auth middleware)
-	userIDStr, ok := domain.GetSubject(r.Context())
-	if !ok {
-		h.logger.Error("user ID not found in context")
+	// Extract token from Authorization header
+	token := h.extractToken(r)
+	if token == "" {
+		h.logger.Error("no token provided")
+		errors.RespondWithError(w, domain.ErrUnauthorized)
+		return
+	}
+
+	// Validate token and get claims
+	claims, err := h.jwtService.ValidateToken(token)
+	if err != nil {
+		h.logger.Error("failed to validate token", zap.Error(err))
+		errors.RespondWithError(w, domain.ErrUnauthorized)
+		return
+	}
+
+	// Get user ID from token claims
+	if claims.Subject == "" {
+		h.logger.Error("no subject found in token")
 		errors.RespondWithError(w, domain.ErrUnauthorized)
 		return
 	}
 
 	// Parse user ID
-	userID, err := ulid.Parse(userIDStr)
+	userID, err := ulid.Parse(claims.Subject)
 	if err != nil {
 		h.logger.Error("invalid user ID format in token", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrUnauthorized)
@@ -267,4 +285,11 @@ func (h *HandlerAccount) DeleteAccountHandler(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
- 
+// extractToken extracts the JWT token from the Authorization header
+func (h *HandlerAccount) extractToken(r *http.Request) string {
+	bearToken := r.Header.Get("Authorization")
+	if len(strings.Split(bearToken, " ")) == 2 {
+		return strings.Split(bearToken, " ")[1]
+	}
+	return ""
+}

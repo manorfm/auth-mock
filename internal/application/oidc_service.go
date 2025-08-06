@@ -157,7 +157,7 @@ func (s *OIDCService) ExchangeCode(ctx context.Context, code string, codeVerifie
 	}
 
 	// Generate token pair with scopes
-	tokenPair, err := s.jwtService.GenerateTokenPair(user.ID, user.Roles)
+	tokenPair, err := s.jwtService.GenerateTokenPair(ctx, user)
 	if err != nil {
 		s.logger.Error("Failed to generate token pair",
 			zap.Error(err))
@@ -203,7 +203,7 @@ func (s *OIDCService) RefreshToken(ctx context.Context, refreshToken string) (*d
 	}
 
 	// Generate new token pair
-	tokenPair, err := s.jwtService.GenerateTokenPair(user.ID, user.Roles)
+	tokenPair, err := s.jwtService.GenerateTokenPair(ctx, user)
 	if err != nil {
 		s.logger.Error("Failed to generate token pair",
 			zap.Error(err))

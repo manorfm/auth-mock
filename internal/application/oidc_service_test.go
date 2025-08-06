@@ -188,7 +188,7 @@ func (m *mockJWTRefresh) GetJWKS(ctx context.Context) (map[string]interface{}, e
 	return nil, nil
 }
 
-func (m *mockJWTRefresh) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
+func (m *mockJWTRefresh) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
 	return &domain.TokenPair{
 		AccessToken:  "mock_access_token",
 		RefreshToken: "mock_refresh_token",
@@ -226,7 +226,7 @@ func (m *mockJWTError) GetJWKS(ctx context.Context) (map[string]interface{}, err
 	return nil, nil
 }
 
-func (m *mockJWTError) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
+func (m *mockJWTError) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
 	return nil, nil
 }
 
@@ -292,7 +292,7 @@ func (m *mockJWTInvalidUserID) GetJWKS(ctx context.Context) (map[string]interfac
 	return nil, nil
 }
 
-func (m *mockJWTInvalidUserID) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
+func (m *mockJWTInvalidUserID) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
 	return nil, nil
 }
 
@@ -328,7 +328,7 @@ func (m *mockJWTTokenGenError) GetJWKS(ctx context.Context) (map[string]interfac
 	return nil, nil
 }
 
-func (m *mockJWTTokenGenError) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
+func (m *mockJWTTokenGenError) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
 	return nil, domain.ErrInternal
 }
 

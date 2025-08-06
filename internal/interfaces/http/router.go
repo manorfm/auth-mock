@@ -60,7 +60,7 @@ func NewRouter(
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, logger)
 	userHandler := handlers.NewUserHandler(userService, logger)
-	accountHandler := handlers.NewAccountHandler(accountService, userService, totpService, logger)
+	accountHandler := handlers.NewAccountHandler(accountService, userService, totpService, jwtService, logger)
 	oidcHandler := handlers.NewOIDCHandler(oidcService, jwtService, logger)
 	oauth2Handler := handlers.NewOAuth2Handler(oauthRepo, logger)
 	totpHandler := handlers.NewTOTPHandler(totpService, logger)

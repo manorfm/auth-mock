@@ -163,11 +163,11 @@ func (j *jwtService) GetJWKS(ctx context.Context) (map[string]interface{}, error
 }
 
 // GenerateTokenPair generates a new pair of access and refresh tokens
-func (j *jwtService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
+func (j *jwtService) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 
-	if len(roles) == 0 {
+	if len(user.Roles) == 0 {
 		return nil, domain.ErrTokenHasNoRoles
 	}
 
@@ -179,9 +179,9 @@ func (j *jwtService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domai
 	// Generate access token
 	accessTokenID := ulid.Make().String()
 	accessClaims := domain.Claims{
-		Roles: roles,
+		Roles: user.Roles,
 		RegisteredClaims: &jwt.RegisteredClaims{
-			Subject:   userID.String(),
+			Subject:   user.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.config.JWTAccessDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        accessTokenID,
@@ -194,16 +194,16 @@ func (j *jwtService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domai
 		j.logger.Error("Failed to sign access token",
 			zap.Error(err),
 			zap.String("token_id", accessTokenID),
-			zap.String("user_id", userID.String()))
+			zap.String("user_id", user.ID.String()))
 		return nil, domain.ErrTokenGeneration
 	}
 
 	// Generate refresh token
 	refreshTokenID := ulid.Make().String()
 	refreshClaims := domain.Claims{
-		Roles: roles,
+		Roles: user.Roles,
 		RegisteredClaims: &jwt.RegisteredClaims{
-			Subject:   userID.String(),
+			Subject:   user.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.config.JWTRefreshDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        refreshTokenID,
@@ -215,14 +215,14 @@ func (j *jwtService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domai
 		j.logger.Error("Failed to sign refresh token",
 			zap.Error(err),
 			zap.String("token_id", refreshTokenID),
-			zap.String("user_id", userID.String()))
+			zap.String("user_id", user.ID.String()))
 		return nil, domain.ErrTokenGeneration
 	}
 
 	j.logger.Debug("Generated token pair",
 		zap.String("access_token_id", accessTokenID),
 		zap.String("refresh_token_id", refreshTokenID),
-		zap.String("user_id", userID.String()),
+		zap.String("user_id", user.ID.String()),
 		zap.String("key_id", j.strategy.GetKeyID()))
 
 	return &domain.TokenPair{

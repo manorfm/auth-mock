@@ -96,8 +96,8 @@ type mockJWTService struct {
 	mock.Mock
 }
 
-func (m *mockJWTService) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
-	args := m.Called(userID, roles)
+func (m *mockJWTService) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
+	args := m.Called(ctx, user)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

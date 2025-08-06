@@ -59,7 +59,7 @@ func TestAccountIntegration(t *testing.T) {
 	authService := application.NewAuthService(cfg, userRepo, accountService, verificationRepo, jwtService, emailTemplate, totpService, mfaTicketRepo, logger)
 
 	// Setup handlers
-	accountHandler := handlers.NewAccountHandler(accountService, userService, totpService, logger)
+	accountHandler := handlers.NewAccountHandler(accountService, userService, totpService, jwtService, logger)
 
 	t.Run("Complete Account Flow", func(t *testing.T) {
 		// 1. Register a new user (this should create an account automatically)
@@ -97,9 +97,12 @@ func TestAccountIntegration(t *testing.T) {
 		assert.Equal(t, string(domain.AccountStatusActive), string(accountResponse.Status))
 
 		// 5. Test GetMeHandler
+		// Generate a valid token for the user
+		meTokenPair, err2 := jwtService.GenerateTokenPair(ctx, user)
+		require.NoError(t, err2)
+
 		req = httptest.NewRequest("GET", "/api/accounts/me", nil)
-		ctxWithUser = context.WithValue(req.Context(), domain.ContextKeySubject, user.ID.String())
-		req = req.WithContext(ctxWithUser)
+		req.Header.Set("Authorization", "Bearer "+meTokenPair.AccessToken)
 
 		w = httptest.NewRecorder()
 		accountHandler.GetMeHandler(w, req)

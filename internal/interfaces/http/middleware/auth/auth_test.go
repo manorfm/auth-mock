@@ -11,7 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/manorfm/auth-mock/internal/domain"
-	"github.com/oklog/ulid/v2"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -21,8 +21,8 @@ type MockJWT struct {
 	mock.Mock
 }
 
-func (m *MockJWT) GenerateTokenPair(userID ulid.ULID, roles []string) (*domain.TokenPair, error) {
-	args := m.Called(userID, roles)
+func (m *MockJWT) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
+	args := m.Called(ctx, user)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

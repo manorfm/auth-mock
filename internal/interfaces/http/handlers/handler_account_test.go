@@ -3,12 +3,14 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
@@ -114,6 +116,57 @@ func (m *MockAccountTOTPService) GetTOTPSecret(ctx context.Context, userID strin
 	return args.String(0), args.Error(1)
 }
 
+type MockJWTService struct {
+	mock.Mock
+}
+
+func (m *MockJWTService) ValidateToken(token string) (*domain.Claims, error) {
+	args := m.Called(token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Claims), args.Error(1)
+}
+
+func (m *MockJWTService) GetJWKS(ctx context.Context) (map[string]interface{}, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+func (m *MockJWTService) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
+	args := m.Called(ctx, user)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.TokenPair), args.Error(1)
+}
+
+func (m *MockJWTService) GetPublicKey() *rsa.PublicKey {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*rsa.PublicKey)
+}
+
+func (m *MockJWTService) RotateKeys() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockJWTService) BlacklistToken(tokenID string, expiresAt time.Time) error {
+	args := m.Called(tokenID, expiresAt)
+	return args.Error(0)
+}
+
+func (m *MockJWTService) IsTokenBlacklisted(tokenID string) bool {
+	args := m.Called(tokenID)
+	return args.Bool(0)
+}
+
 func TestHandlerAccount_GetAccountsHandler(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -153,9 +206,10 @@ func TestHandlerAccount_GetAccountsHandler(t *testing.T) {
 			mockAccountSvc := new(MockAccountService)
 			mockUserSvc := new(MockUserService)
 			mockTOTPSvc := new(MockAccountTOTPService)
+			mockJWTService := new(MockJWTService)
 			logger := zap.NewNop()
 
-			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, logger)
+			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, mockJWTService, logger)
 
 			tt.setupMocks(mockAccountSvc)
 
@@ -176,14 +230,14 @@ func TestHandlerAccount_GetMeHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		userID         string
-		setupMocks     func(*MockAccountService, *MockUserService, *MockAccountTOTPService)
+		setupMocks     func(*MockAccountService, *MockUserService, *MockAccountTOTPService, *MockJWTService)
 		expectedStatus int
 		expectedError  error
 	}{
 		{
 			name:   "successful get me",
 			userID: ulid.Make().String(),
-			setupMocks: func(m *MockAccountService, u *MockUserService, t *MockAccountTOTPService) {
+			setupMocks: func(m *MockAccountService, u *MockUserService, t *MockAccountTOTPService, j *MockJWTService) {
 				userID, _ := ulid.Parse(ulid.Make().String())
 				account := &domain.Account{
 					ID:     ulid.Make(),
@@ -196,9 +250,16 @@ func TestHandlerAccount_GetMeHandler(t *testing.T) {
 					Email: "test@example.com",
 					Phone: "1234567890",
 				}
+				claims := &domain.Claims{
+					RegisteredClaims: &jwt.RegisteredClaims{
+						Subject: userID.String(),
+					},
+					Roles: []string{"user"},
+				}
 				m.On("GetAccountByUserID", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(account, nil)
 				u.On("GetUser", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(user, nil)
 				t.On("GetTOTPSecret", mock.Anything, mock.Anything).Return("", domain.ErrTOTPNotEnabled)
+				j.On("ValidateToken", mock.Anything).Return(claims, nil)
 			},
 			expectedStatus: http.StatusOK,
 			expectedError:  nil,
@@ -206,8 +267,16 @@ func TestHandlerAccount_GetMeHandler(t *testing.T) {
 		{
 			name:   "account not found",
 			userID: ulid.Make().String(),
-			setupMocks: func(m *MockAccountService, u *MockUserService, t *MockAccountTOTPService) {
+			setupMocks: func(m *MockAccountService, u *MockUserService, t *MockAccountTOTPService, j *MockJWTService) {
+				userID, _ := ulid.Parse(ulid.Make().String())
+				claims := &domain.Claims{
+					RegisteredClaims: &jwt.RegisteredClaims{
+						Subject: userID.String(),
+					},
+					Roles: []string{"user"},
+				}
 				m.On("GetAccountByUserID", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(nil, domain.ErrAccountNotFound)
+				j.On("ValidateToken", mock.Anything).Return(claims, nil)
 			},
 			expectedStatus: http.StatusNotFound,
 			expectedError:  domain.ErrAccountNotFound,
@@ -219,15 +288,15 @@ func TestHandlerAccount_GetMeHandler(t *testing.T) {
 			mockAccountSvc := new(MockAccountService)
 			mockUserSvc := new(MockUserService)
 			mockTOTPSvc := new(MockAccountTOTPService)
+			mockJWTService := new(MockJWTService)
 			logger := zap.NewNop()
 
-			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, logger)
+			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, mockJWTService, logger)
 
-			tt.setupMocks(mockAccountSvc, mockUserSvc, mockTOTPSvc)
+			tt.setupMocks(mockAccountSvc, mockUserSvc, mockTOTPSvc, mockJWTService)
 
 			req := httptest.NewRequest("GET", "/api/accounts/me", nil)
-			ctx := context.WithValue(req.Context(), domain.ContextKeySubject, tt.userID)
-			req = req.WithContext(ctx)
+			req.Header.Set("Authorization", "Bearer test-token")
 
 			w := httptest.NewRecorder()
 			handler.GetMeHandler(w, req)
@@ -236,6 +305,7 @@ func TestHandlerAccount_GetMeHandler(t *testing.T) {
 			mockAccountSvc.AssertExpectations(t)
 			mockUserSvc.AssertExpectations(t)
 			mockTOTPSvc.AssertExpectations(t)
+			mockJWTService.AssertExpectations(t)
 		})
 	}
 }
@@ -287,9 +357,10 @@ func TestHandlerAccount_UpdateAccountHandler(t *testing.T) {
 			mockAccountSvc := new(MockAccountService)
 			mockUserSvc := new(MockUserService)
 			mockTOTPSvc := new(MockAccountTOTPService)
+			mockJWTService := new(MockJWTService)
 			logger := zap.NewNop()
 
-			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, logger)
+			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, mockJWTService, logger)
 
 			tt.setupMocks(mockAccountSvc)
 
@@ -347,9 +418,10 @@ func TestHandlerAccount_DeleteAccountHandler(t *testing.T) {
 			mockAccountSvc := new(MockAccountService)
 			mockUserSvc := new(MockUserService)
 			mockTOTPSvc := new(MockAccountTOTPService)
+			mockJWTService := new(MockJWTService)
 			logger := zap.NewNop()
 
-			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, logger)
+			handler := NewAccountHandler(mockAccountSvc, mockUserSvc, mockTOTPSvc, mockJWTService, logger)
 
 			tt.setupMocks(mockAccountSvc)
 
