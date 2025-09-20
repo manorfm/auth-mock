@@ -44,6 +44,7 @@ func TestJWTService_ValidateToken(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Test User",
 			Roles: []string{"ADMIN"},
 		}
 		tokenPair, err := service.GenerateTokenPair(context.Background(), user)
@@ -54,6 +55,7 @@ func TestJWTService_ValidateToken(t *testing.T) {
 		require.NotNil(t, claims)
 		require.Equal(t, userID.String(), claims.Subject)
 		require.Equal(t, user.Roles, claims.Roles)
+		require.Equal(t, user.Name, claims.Name)
 	})
 
 	t.Run("expired token", func(t *testing.T) {
@@ -61,6 +63,7 @@ func TestJWTService_ValidateToken(t *testing.T) {
 		expiredUserID := ulid.Make()
 		expiredUser := &domain.User{
 			ID:    expiredUserID,
+			Name:  "Expired User",
 			Roles: []string{"USER"},
 		}
 		expiredTokenPair, err := shortService.GenerateTokenPair(context.Background(), expiredUser)
@@ -95,6 +98,7 @@ func TestJWTService_ValidateToken(t *testing.T) {
 		blacklistedUserID := ulid.Make()
 		blacklistedUser := &domain.User{
 			ID:    blacklistedUserID,
+			Name:  "Blacklisted User",
 			Roles: []string{"USER"},
 		}
 		blacklistedTokenPair, err := service.GenerateTokenPair(context.Background(), blacklistedUser)
@@ -117,6 +121,7 @@ func TestJWTService_ValidateToken(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Invalid Signature User",
 			Roles: []string{"ADMIN"},
 		}
 		tokenPair, err := otherService.GenerateTokenPair(context.Background(), user)
@@ -141,6 +146,7 @@ func TestJWTService_GenerateTokenPair(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Token Pair User",
 			Roles: []string{"ADMIN", "USER"},
 		}
 
@@ -155,6 +161,7 @@ func TestJWTService_GenerateTokenPair(t *testing.T) {
 		assert.NotNil(t, claims)
 		assert.Equal(t, userID.String(), claims.Subject)
 		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, user.Name, claims.Name)
 
 		// Validate refresh token
 		claims, err = service.ValidateToken(tokenPair.RefreshToken)
@@ -162,12 +169,14 @@ func TestJWTService_GenerateTokenPair(t *testing.T) {
 		assert.NotNil(t, claims)
 		assert.Equal(t, userID.String(), claims.Subject)
 		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, user.Name, claims.Name)
 	})
 
 	t.Run("token pair with empty roles", func(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Empty Roles User",
 			Roles: []string{},
 		}
 
@@ -180,6 +189,7 @@ func TestJWTService_GenerateTokenPair(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Nil Roles User",
 			Roles: nil,
 		}
 
@@ -239,6 +249,7 @@ func TestJWTService_RotateKeys(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Key Rotation User",
 			Roles: []string{"ADMIN"},
 		}
 		tokenPair1, err := service.GenerateTokenPair(context.Background(), user)
@@ -250,6 +261,7 @@ func TestJWTService_RotateKeys(t *testing.T) {
 		assert.NotNil(t, validatedClaims)
 		assert.Equal(t, userID.String(), validatedClaims.Subject)
 		assert.Contains(t, validatedClaims.Roles, "ADMIN")
+		assert.Equal(t, user.Name, validatedClaims.Name)
 
 		// Rotate keys
 		err = service.RotateKeys()
@@ -265,6 +277,7 @@ func TestJWTService_RotateKeys(t *testing.T) {
 		assert.NotNil(t, validatedClaims)
 		assert.Equal(t, userID.String(), validatedClaims.Subject)
 		assert.Contains(t, validatedClaims.Roles, "ADMIN")
+		assert.Equal(t, user.Name, validatedClaims.Name)
 
 		// Verify old token is invalid
 		_, err = service.ValidateToken(tokenPair1.AccessToken)
@@ -283,6 +296,7 @@ func TestJWTService_RotateKeys(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Multiple Rotations User",
 			Roles: []string{"ADMIN"},
 		}
 		tokenPair, err := service.GenerateTokenPair(context.Background(), user)
@@ -292,6 +306,7 @@ func TestJWTService_RotateKeys(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, claims)
 		assert.Equal(t, userID.String(), claims.Subject)
+		assert.Equal(t, user.Name, claims.Name)
 	})
 }
 
@@ -302,6 +317,7 @@ func TestJWTService_TokenBlacklist(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Blacklist Check User",
 			Roles: []string{"user"},
 		}
 
@@ -328,6 +344,7 @@ func TestJWTService_TokenBlacklist(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Multiple Blacklist User",
 			Roles: []string{"user"},
 		}
 
@@ -360,6 +377,7 @@ func TestJWTService_TokenBlacklist(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Expired Blacklist User",
 			Roles: []string{"user"},
 		}
 
@@ -393,6 +411,7 @@ func TestJWTService_GetPublicKey(t *testing.T) {
 		userID := ulid.Make()
 		user := &domain.User{
 			ID:    userID,
+			Name:  "Public Key User",
 			Roles: []string{"ADMIN"},
 		}
 
@@ -404,6 +423,7 @@ func TestJWTService_GetPublicKey(t *testing.T) {
 		assert.NotNil(t, claims)
 		assert.Equal(t, userID.String(), claims.Subject)
 		assert.Contains(t, claims.Roles, "ADMIN")
+		assert.Equal(t, user.Name, claims.Name)
 	})
 
 	t.Run("public key after rotation", func(t *testing.T) {
@@ -421,5 +441,102 @@ func TestJWTService_GetPublicKey(t *testing.T) {
 
 		// Verify keys are different
 		assert.NotEqual(t, initialKey, newKey)
+	})
+}
+
+func TestJWTService_UserClaims(t *testing.T) {
+	service := getJWTService(t)
+
+	t.Run("token includes user name in claims", func(t *testing.T) {
+		userID := ulid.Make()
+		userName := "John Doe"
+		user := &domain.User{
+			ID:    userID,
+			Name:  userName,
+			Roles: []string{"ADMIN", "USER"},
+		}
+
+		tokenPair, err := service.GenerateTokenPair(context.Background(), user)
+		require.NoError(t, err)
+		assert.NotEmpty(t, tokenPair.AccessToken)
+		assert.NotEmpty(t, tokenPair.RefreshToken)
+
+		// Validate access token and check name claim
+		claims, err := service.ValidateToken(tokenPair.AccessToken)
+		require.NoError(t, err)
+		assert.NotNil(t, claims)
+		assert.Equal(t, userID.String(), claims.Subject)
+		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, userName, claims.Name)
+
+		// Validate refresh token and check name claim
+		claims, err = service.ValidateToken(tokenPair.RefreshToken)
+		require.NoError(t, err)
+		assert.NotNil(t, claims)
+		assert.Equal(t, userID.String(), claims.Subject)
+		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, userName, claims.Name)
+	})
+
+	t.Run("token with empty user name", func(t *testing.T) {
+		userID := ulid.Make()
+		user := &domain.User{
+			ID:    userID,
+			Name:  "", // Empty name
+			Roles: []string{"USER"},
+		}
+
+		tokenPair, err := service.GenerateTokenPair(context.Background(), user)
+		require.NoError(t, err)
+
+		// Validate access token and check name claim
+		claims, err := service.ValidateToken(tokenPair.AccessToken)
+		require.NoError(t, err)
+		assert.NotNil(t, claims)
+		assert.Equal(t, userID.String(), claims.Subject)
+		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, "", claims.Name) // Should be empty string
+	})
+
+	t.Run("token with special characters in user name", func(t *testing.T) {
+		userID := ulid.Make()
+		userName := "José María O'Connor-Smith"
+		user := &domain.User{
+			ID:    userID,
+			Name:  userName,
+			Roles: []string{"USER"},
+		}
+
+		tokenPair, err := service.GenerateTokenPair(context.Background(), user)
+		require.NoError(t, err)
+
+		// Validate access token and check name claim
+		claims, err := service.ValidateToken(tokenPair.AccessToken)
+		require.NoError(t, err)
+		assert.NotNil(t, claims)
+		assert.Equal(t, userID.String(), claims.Subject)
+		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, userName, claims.Name)
+	})
+
+	t.Run("token with very long user name", func(t *testing.T) {
+		userID := ulid.Make()
+		userName := strings.Repeat("A", 1000) // Very long name
+		user := &domain.User{
+			ID:    userID,
+			Name:  userName,
+			Roles: []string{"USER"},
+		}
+
+		tokenPair, err := service.GenerateTokenPair(context.Background(), user)
+		require.NoError(t, err)
+
+		// Validate access token and check name claim
+		claims, err := service.ValidateToken(tokenPair.AccessToken)
+		require.NoError(t, err)
+		assert.NotNil(t, claims)
+		assert.Equal(t, userID.String(), claims.Subject)
+		assert.Equal(t, user.Roles, claims.Roles)
+		assert.Equal(t, userName, claims.Name)
 	})
 }

@@ -180,6 +180,7 @@ func (j *jwtService) GenerateTokenPair(ctx context.Context, user *domain.User) (
 	accessTokenID := ulid.Make().String()
 	accessClaims := domain.Claims{
 		Roles: user.Roles,
+		Name:  user.Name,
 		RegisteredClaims: &jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.config.JWTAccessDuration)),
@@ -202,6 +203,7 @@ func (j *jwtService) GenerateTokenPair(ctx context.Context, user *domain.User) (
 	refreshTokenID := ulid.Make().String()
 	refreshClaims := domain.Claims{
 		Roles: user.Roles,
+		Name:  user.Name,
 		RegisteredClaims: &jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.config.JWTRefreshDuration)),

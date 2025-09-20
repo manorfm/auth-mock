@@ -74,6 +74,7 @@ func (l *localStrategy) Sign(claims *domain.Claims) (string, error) {
 		"iat":   claims.IssuedAt.Unix(),
 		"jti":   claims.ID,
 		"roles": claims.Roles,
+		"name":  claims.Name,
 	}
 
 	// Adiciona os claims extras (dinâmicos)

@@ -39,6 +39,7 @@ type TokenPair struct {
 type Claims struct {
 	*jwt.RegisteredClaims
 	Roles []string               `json:"roles"`
+	Name  string                 `json:"name"`
 	Extra map[string]interface{} `json:"-"`
 }
 
