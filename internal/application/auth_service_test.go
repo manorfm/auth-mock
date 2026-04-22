@@ -364,6 +364,135 @@ func TestAuthService_Register(t *testing.T) {
 	}
 }
 
+func TestAuthService_RegisterManagementOwner_AssignsAdminRole(t *testing.T) {
+	mockUserRepo := new(MockUserRepository)
+	mockVerificationRepo := new(mockVerificationCodeRepository)
+	mockEmailSvc := new(mockEmailService)
+	mockTOTPSvc := new(authMockTOTPService)
+	mockMFATicketRepo := new(mockMFATicketRepository)
+	mockAccountSvc := new(mockAccountService)
+
+	cfg := &config.Config{
+		EmailEnabled: false,
+	}
+
+	mockUserRepo.On("ExistsByEmail", mock.Anything, "management@example.com").Return(false, nil)
+	mockUserRepo.On("Create", mock.Anything, mock.MatchedBy(func(user *domain.User) bool {
+		return user.Email == "management@example.com" &&
+			user.UserType == domain.UserTypeManagement &&
+			contains(user.Roles, domain.RoleUser) &&
+			contains(user.Roles, domain.RoleAdmin) &&
+			user.EmailVerified
+	})).Return(nil)
+	mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+	mockVerificationRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.VerificationCode")).Return(nil)
+
+	service := NewAuthService(
+		cfg,
+		mockUserRepo,
+		mockAccountSvc,
+		mockVerificationRepo,
+		nil,
+		mockEmailSvc,
+		mockTOTPSvc,
+		mockMFATicketRepo,
+		zap.NewNop(),
+	)
+
+	user, err := service.RegisterManagementOwner(context.Background(), "Manager", "management@example.com", "password123", "123456789")
+	assert.NoError(t, err)
+	assert.NotNil(t, user)
+	assert.Contains(t, user.Roles, domain.RoleAdmin)
+	assert.Contains(t, user.Roles, domain.RoleUser)
+
+	mockUserRepo.AssertExpectations(t)
+	mockVerificationRepo.AssertExpectations(t)
+	mockAccountSvc.AssertExpectations(t)
+}
+
+func TestAuthService_CreateStandaloneUserByAdmin(t *testing.T) {
+	t.Run("rejects roles in payload", func(t *testing.T) {
+		service := NewAuthService(
+			&config.Config{EmailEnabled: false},
+			new(MockUserRepository),
+			new(mockAccountService),
+			new(mockVerificationCodeRepository),
+			nil,
+			new(mockEmailService),
+			new(authMockTOTPService),
+			new(mockMFATicketRepository),
+			zap.NewNop(),
+		)
+
+		user, err := service.CreateStandaloneUserByAdmin(
+			context.Background(),
+			"Standalone",
+			"standalone@example.com",
+			"password123",
+			"123456789",
+			[]string{domain.ChannelManagementPanel},
+			[]string{domain.RoleUser},
+		)
+
+		assert.Nil(t, user)
+		assert.ErrorIs(t, err, domain.ErrForbidden)
+	})
+
+	t.Run("creates with base user role only", func(t *testing.T) {
+		mockUserRepo := new(MockUserRepository)
+		mockVerificationRepo := new(mockVerificationCodeRepository)
+		mockEmailSvc := new(mockEmailService)
+		mockTOTPSvc := new(authMockTOTPService)
+		mockMFATicketRepo := new(mockMFATicketRepository)
+		mockAccountSvc := new(mockAccountService)
+
+		cfg := &config.Config{EmailEnabled: false}
+
+		mockUserRepo.On("ExistsByEmail", mock.Anything, "standalone@example.com").Return(false, nil)
+		mockUserRepo.On("Create", mock.Anything, mock.MatchedBy(func(user *domain.User) bool {
+			return user.Email == "standalone@example.com" &&
+				user.UserType == domain.UserTypeStandalone &&
+				len(user.Roles) == 1 &&
+				user.Roles[0] == domain.RoleUser &&
+				user.EmailVerified
+		})).Return(nil)
+		mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+		mockVerificationRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.VerificationCode")).Return(nil)
+
+		service := NewAuthService(
+			cfg,
+			mockUserRepo,
+			mockAccountSvc,
+			mockVerificationRepo,
+			nil,
+			mockEmailSvc,
+			mockTOTPSvc,
+			mockMFATicketRepo,
+			zap.NewNop(),
+		)
+
+		user, err := service.CreateStandaloneUserByAdmin(
+			context.Background(),
+			"Standalone",
+			"standalone@example.com",
+			"password123",
+			"123456789",
+			[]string{domain.ChannelManagementPanel},
+			nil,
+		)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, user)
+		assert.Equal(t, domain.UserTypeStandalone, user.UserType)
+		assert.Equal(t, []string{domain.RoleUser}, user.Roles)
+		assert.True(t, user.EmailVerified)
+
+		mockUserRepo.AssertExpectations(t)
+		mockVerificationRepo.AssertExpectations(t)
+		mockAccountSvc.AssertExpectations(t)
+	})
+}
+
 func TestAuthService_VerifyEmail(t *testing.T) {
 	cfg := &config.Config{
 		EmailEnabled: false,

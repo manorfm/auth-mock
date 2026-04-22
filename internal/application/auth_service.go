@@ -64,27 +64,21 @@ func (s *AuthService) RegisterClient(ctx context.Context, name, email, password,
 }
 
 func (s *AuthService) RegisterManagementOwner(ctx context.Context, name, email, password, phone string) (*domain.User, error) {
-	return s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeManagement, []string{domain.ChannelManagementPanel}, []string{domain.RoleUser}, false, false)
+	return s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeManagement, []string{domain.ChannelManagementPanel}, []string{domain.RoleUser, domain.RoleAdmin}, false, true)
 }
 
 func (s *AuthService) CreateStandaloneUserByAdmin(ctx context.Context, name, email, password, phone string, channels, roles []string) (*domain.User, error) {
 	if len(channels) == 0 {
 		channels = []string{domain.ChannelManagementPanel}
 	}
-	if len(roles) == 0 {
-		roles = []string{domain.RoleUser}
+	if len(normalizeRoles(roles)) > 0 {
+		return nil, domain.ErrForbidden
 	}
 	channels = normalizeChannels(channels)
 	if err := validateChannels(channels); err != nil {
 		return nil, err
 	}
-	for _, role := range roles {
-		nr := strings.TrimSpace(strings.ToLower(role))
-		if nr == domain.RoleRoot || nr == domain.RoleAdmin {
-			return nil, domain.ErrAuthRoleProtected
-		}
-	}
-	u, err := s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeStandalone, channels, roles, true, false)
+	u, err := s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeStandalone, channels, []string{domain.RoleUser}, true, false)
 	if err == nil {
 		s.auditAuth(ctx, "admin_create_standalone_user", zap.String("target_user_id", u.ID.String()), zap.String("email", u.Email))
 	}
