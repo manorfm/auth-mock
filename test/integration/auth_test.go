@@ -107,7 +107,7 @@ func TestAuthService_Integration(t *testing.T) {
 		assert.False(t, user.EmailVerified)
 
 		// Try to login before email verification
-		_, err = authService.Login(ctx, "test@example.com", "password123")
+		_, err = authService.Login(ctx, "test@example.com", "password123", domain.ChannelManagementPanel)
 		assert.ErrorIs(t, err, domain.ErrEmailNotVerified)
 
 		// Verify email using the code from the mock
@@ -115,7 +115,7 @@ func TestAuthService_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Login after email verification
-		result, err := authService.Login(ctx, "test@example.com", "password123")
+		result, err := authService.Login(ctx, "test@example.com", "password123", domain.ChannelManagementPanel)
 		require.NoError(t, err)
 		assert.NotNil(t, result)
 
@@ -144,7 +144,7 @@ func TestAuthService_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to login with new password
-		result, err := authService.Login(ctx, "reset@example.com", "newpassword")
+		result, err := authService.Login(ctx, "reset@example.com", "newpassword", domain.ChannelManagementPanel)
 		require.NoError(t, err)
 		assert.NotNil(t, result)
 
@@ -165,8 +165,8 @@ func TestAuthService_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to login with invalid credentials
-		_, err = authService.Login(ctx, "invalid@example.com", "wrongpassword")
-		assert.ErrorIs(t, err, domain.ErrInvalidCredentials)
+		_, err = authService.Login(ctx, "invalid@example.com", "wrongpassword", domain.ChannelManagementPanel)
+		assert.ErrorIs(t, err, domain.ErrAuthInvalidCredentials)
 	})
 
 	t.Run("Login with TOTP Flow", func(t *testing.T) {
@@ -198,7 +198,7 @@ func TestAuthService_Integration(t *testing.T) {
 
 		// Try to login - should get MFA ticket
 		fmt.Printf("[DEBUG] Chamando Login para gerar ticket MFA...\n")
-		result, err := authService.Login(ctx, "totp@example.com", "password123")
+		result, err := authService.Login(ctx, "totp@example.com", "password123", domain.ChannelManagementPanel)
 		if err != nil {
 			fmt.Printf("[DEBUG] Erro no Login: %v\n", err)
 		}

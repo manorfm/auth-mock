@@ -105,7 +105,8 @@ func TestAuthMiddleware_Authenticator(t *testing.T) {
 					RegisteredClaims: &jwt.RegisteredClaims{
 						Subject: "test-user",
 					},
-					Roles: []string{"admin"},
+					Roles:    []string{"admin"},
+					Channels: []string{domain.ChannelManagementPanel},
 				}
 				m.On("ValidateToken", "valid-token").Return(claims, nil)
 			},
@@ -154,14 +155,14 @@ func TestAuthMiddleware_RequireRole(t *testing.T) {
 			requiredRole:   "admin",
 			userRoles:      nil,
 			expectedStatus: http.StatusForbidden,
-			expectedBody:   `{"code":"U0018","message":"Forbidden"}`,
+			expectedBody:   `{"code":"U0067","message":"Administrator privileges required"}`,
 		},
 		{
 			name:           "role not found",
 			requiredRole:   "admin",
 			userRoles:      []string{"user"},
 			expectedStatus: http.StatusForbidden,
-			expectedBody:   `{"code":"U0018","message":"Forbidden"}`,
+			expectedBody:   `{"code":"U0067","message":"Administrator privileges required"}`,
 		},
 		{
 			name:           "role found",
@@ -182,7 +183,7 @@ func TestAuthMiddleware_RequireRole(t *testing.T) {
 			})
 
 			req := httptest.NewRequest("GET", "/", nil)
-			ctx := context.WithValue(req.Context(), "roles", tt.userRoles)
+			ctx := context.WithValue(req.Context(), domain.ContextKeyRoles, tt.userRoles)
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()

@@ -25,7 +25,7 @@ func NewTOTPHandler(service domain.TOTPService, logger *zap.Logger) *TOTPHandler
 
 // EnableTOTP handles the request to enable TOTP for a user
 func (h *TOTPHandler) EnableTOTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		h.logger.Error("User not authenticated")
 		errors.RespondWithError(w, domain.ErrUnauthorized)
@@ -51,7 +51,7 @@ func (h *TOTPHandler) EnableTOTP(w http.ResponseWriter, r *http.Request) {
 
 // VerifyTOTP handles the request to verify a TOTP code
 func (h *TOTPHandler) VerifyTOTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		h.logger.Error("User not authenticated")
 		errors.RespondWithError(w, domain.ErrUnauthorized)
@@ -95,7 +95,7 @@ func (h *TOTPHandler) VerifyTOTP(w http.ResponseWriter, r *http.Request) {
 
 // VerifyBackupCode handles the request to verify a backup code
 func (h *TOTPHandler) VerifyBackupCode(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		h.logger.Error("User not authenticated")
 		errors.RespondWithError(w, domain.ErrUnauthorized)
@@ -139,7 +139,7 @@ func (h *TOTPHandler) VerifyBackupCode(w http.ResponseWriter, r *http.Request) {
 
 // DisableTOTP handles the request to disable TOTP for a user
 func (h *TOTPHandler) DisableTOTP(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		h.logger.Error("User not authenticated")
 		errors.RespondWithError(w, domain.ErrUnauthorized)

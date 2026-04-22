@@ -40,6 +40,35 @@ func NewUserResponse(user *domain.User) *UserResponse {
 	}
 }
 
+func (h *HandlerUser) GetMeHandler(w http.ResponseWriter, r *http.Request) {
+	sub, ok := domain.GetSubject(r.Context())
+	if !ok || sub == "" {
+		errors.RespondWithError(w, domain.ErrUnauthorized)
+		return
+	}
+	id, err := ulid.Parse(sub)
+	if err != nil {
+		errors.RespondWithError(w, domain.ErrInvalidUserID)
+		return
+	}
+	user, err := h.userService.GetUser(r.Context(), id)
+	if err != nil {
+		h.logger.Error("failed to get current user", zap.Error(err))
+		if err == domain.ErrUserNotFound {
+			errors.RespondWithError(w, domain.ErrUserNotFound)
+			return
+		}
+		errors.RespondWithError(w, domain.ErrInternal)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(NewUserResponse(user)); err != nil {
+		h.logger.Error("failed to encode user", zap.Error(err))
+		errors.RespondWithError(w, domain.ErrInternal)
+	}
+}
+
 func (h *HandlerUser) GetUserHandler(w http.ResponseWriter, r *http.Request) {
 	userID := getID(r, h)
 	if userID == nil {

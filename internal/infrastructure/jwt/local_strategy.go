@@ -76,6 +76,12 @@ func (l *localStrategy) Sign(claims *domain.Claims) (string, error) {
 		"roles": claims.Roles,
 		"name":  claims.Name,
 	}
+	if claims.UserType != "" {
+		mapClaims["user_type"] = claims.UserType
+	}
+	if len(claims.Channels) > 0 {
+		mapClaims["channels"] = claims.Channels
+	}
 
 	// Adiciona os claims extras (dinâmicos)
 	for k, v := range claims.Extra {

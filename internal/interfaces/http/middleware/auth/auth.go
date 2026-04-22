@@ -38,8 +38,9 @@ func (m *AuthMiddleware) Authenticator(next http.Handler) http.Handler {
 			zap.String("subject", claims.Subject),
 			zap.Strings("roles", claims.Roles))
 
-		ctx := context.WithValue(r.Context(), "sub", claims.Subject)
-		ctx = context.WithValue(ctx, "roles", claims.Roles)
+		ctx := context.WithValue(r.Context(), domain.ContextKeySubject, claims.Subject)
+		ctx = context.WithValue(ctx, domain.ContextKeyRoles, claims.Roles)
+		ctx = context.WithValue(ctx, domain.ContextKeyChannels, claims.Channels)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -47,9 +48,9 @@ func (m *AuthMiddleware) Authenticator(next http.Handler) http.Handler {
 func (m *AuthMiddleware) RequireRole(role string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			roles, ok := r.Context().Value("roles").([]string)
+			roles, ok := domain.GetRoles(r.Context())
 			if !ok {
-				errors.RespondWithError(w, domain.ErrForbidden)
+				errors.RespondWithError(w, domain.ErrAuthAdminRequired)
 				return
 			}
 
@@ -60,7 +61,47 @@ func (m *AuthMiddleware) RequireRole(role string) func(next http.Handler) http.H
 				}
 			}
 
-			errors.RespondWithError(w, domain.ErrForbidden)
+			errors.RespondWithError(w, domain.ErrAuthAdminRequired)
+		})
+	}
+}
+
+func (m *AuthMiddleware) RequireAnyRole(roles ...string) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userRoles, ok := domain.GetRoles(r.Context())
+			if !ok {
+				errors.RespondWithError(w, domain.ErrAuthAdminRequired)
+				return
+			}
+			for _, role := range roles {
+				for _, userRole := range userRoles {
+					if role == userRole {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+			errors.RespondWithError(w, domain.ErrAuthAdminRequired)
+		})
+	}
+}
+
+func (m *AuthMiddleware) RequireChannel(channel string) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			channels, ok := domain.GetChannels(r.Context())
+			if !ok {
+				errors.RespondWithError(w, domain.ErrAuthForbiddenChannel)
+				return
+			}
+			for _, allowed := range channels {
+				if allowed == channel {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			errors.RespondWithError(w, domain.ErrAuthForbiddenChannel)
 		})
 	}
 }

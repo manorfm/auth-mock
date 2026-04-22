@@ -721,7 +721,7 @@ func TestAuthService_Login(t *testing.T) {
 			},
 			email:         "nonexistent@example.com",
 			password:      "password123",
-			expectedError: domain.ErrInvalidCredentials,
+			expectedError: domain.ErrAuthInvalidCredentials,
 			expectedToken: nil,
 		},
 		{
@@ -733,12 +733,13 @@ func TestAuthService_Login(t *testing.T) {
 					Email:         "test@example.com",
 					Password:      hashedPassword,
 					Roles:         []string{"user"},
+					Channels:      []string{domain.ChannelManagementPanel},
 					EmailVerified: true,
 				}, nil)
 			},
 			email:         "test@example.com",
 			password:      "wrongpassword",
-			expectedError: domain.ErrInvalidCredentials,
+			expectedError: domain.ErrAuthInvalidCredentials,
 			expectedToken: nil,
 		},
 		{
@@ -750,6 +751,7 @@ func TestAuthService_Login(t *testing.T) {
 					Email:         "test@example.com",
 					Password:      hashedPassword,
 					Roles:         []string{"user"},
+					Channels:      []string{domain.ChannelManagementPanel},
 					EmailVerified: false,
 				}, nil)
 			},
@@ -767,6 +769,7 @@ func TestAuthService_Login(t *testing.T) {
 					Email:         "test@example.com",
 					Password:      hashedPassword,
 					Roles:         []string{"user"},
+					Channels:      []string{domain.ChannelManagementPanel},
 					EmailVerified: true,
 				}, nil)
 			},
@@ -802,17 +805,16 @@ func TestAuthService_Login(t *testing.T) {
 			tt.mockSetup(repo)
 			if tt.expectedToken != nil {
 				mockTOTPSvc.On("GetTOTPSecret", mock.Anything, mock.Anything).Return("", domain.ErrTOTPNotEnabled)
-				mockMFATicketRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 				mockJWTService.On("GenerateTokenPair", mock.Anything, mock.Anything).Return(&domain.TokenPair{
 					AccessToken:  "access_token",
 					RefreshToken: "refresh_token",
 				}, nil)
 			}
 
-			token, err := service.Login(context.Background(), tt.email, tt.password)
+			token, err := service.Login(context.Background(), tt.email, tt.password, domain.ChannelManagementPanel)
 			if tt.expectedError != nil {
 				assert.Error(t, err)
-				assert.Equal(t, tt.expectedError, err)
+				assert.ErrorIs(t, err, tt.expectedError)
 				assert.Nil(t, token)
 			} else {
 				assert.NoError(t, err)

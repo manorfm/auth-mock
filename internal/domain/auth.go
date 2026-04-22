@@ -29,8 +29,18 @@ type MFATicketRepository interface {
 type AuthService interface {
 	// Register creates a new user
 	Register(ctx context.Context, name, email, password, phone string, roles []string) (*User, error)
+	RegisterClient(ctx context.Context, name, email, password, phone string) (*User, error)
+	RegisterManagementOwner(ctx context.Context, name, email, password, phone string) (*User, error)
+	CreateStandaloneUserByAdmin(ctx context.Context, name, email, password, phone string, channels, roles []string) (*User, error)
+	AssignRoleToStandalone(ctx context.Context, userID, role string) ([]string, error)
+	RemoveRoleFromStandalone(ctx context.Context, userID, role string) ([]string, error)
+	ListRolesByUser(ctx context.Context, userID string) ([]RoleDefinition, error)
+	CreateCustomRole(ctx context.Context, role string) error
+	RenameCustomRole(ctx context.Context, fromName, toName string) error
+	DeleteCustomRole(ctx context.Context, role string) error
+	ListRoles(ctx context.Context) ([]RoleDefinition, error)
 	// Login authenticates a user and returns a token pair or MFA ticket
-	Login(ctx context.Context, email, password string) (interface{}, error)
+	Login(ctx context.Context, email, password, channel string) (interface{}, error)
 	// VerifyMFA verifies the MFA code and returns a token pair
 	VerifyMFA(ctx context.Context, ticketID, code string) (*TokenPair, error)
 	// VerifyEmail verifies the email code and returns a token pair
@@ -39,4 +49,13 @@ type AuthService interface {
 	RequestPasswordReset(ctx context.Context, email string) error
 	// ResetPassword resets the password
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
+	// RefreshWithRefreshToken issues a new access/refresh pair from a valid refresh JWT.
+	RefreshWithRefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error)
+	// ResendVerificationEmail generates a new email verification code when verification is enabled.
+	ResendVerificationEmail(ctx context.Context, email string) error
+}
+
+type RoleDefinition struct {
+	Name     string `json:"name"`
+	IsSystem bool   `json:"is_system"`
 }

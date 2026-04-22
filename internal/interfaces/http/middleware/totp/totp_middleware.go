@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/manorfm/auth-mock/internal/interfaces/http/errors"
@@ -28,7 +29,7 @@ func NewMiddleware(totpService domain.TOTPService, logger *zap.Logger) *Middlewa
 func (m *Middleware) Verifier(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get user ID from context (set by auth middleware)
-		userID, ok := r.Context().Value("sub").(string)
+		userID, ok := domain.GetSubject(r.Context())
 		if !ok || userID == "" {
 			m.logger.Error("User not authenticated")
 			errors.RespondWithError(w, domain.ErrUnauthorized)
@@ -64,9 +65,8 @@ func (m *Middleware) Verifier(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check if this is a TOTP verification request
-		if r.URL.Path == "/api/totp/verify" || r.URL.Path == "/api/totp/verify-backup" {
-			// Allow TOTP verification endpoints to proceed
+		path := r.URL.Path
+		if strings.HasSuffix(path, "/totp/verify") || strings.HasSuffix(path, "/totp/verify-backup") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -78,7 +78,7 @@ func (m *Middleware) Verifier(next http.Handler) http.Handler {
 
 // VerificationHandler handles the TOTP verification process
 func (m *Middleware) VerificationHandler(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		m.logger.Error("User not authenticated")
 		errors.RespondWithError(w, domain.ErrUnauthorized)

@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/manorfm/auth-mock/internal/domain"
+	"github.com/manorfm/auth-mock/internal/infrastructure/config"
 	"github.com/manorfm/auth-mock/internal/interfaces/http/errors"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
@@ -21,15 +23,15 @@ type mockAuthService struct {
 }
 
 func (m *mockAuthService) Register(ctx context.Context, name, email, password, phone string, roles []string) (*domain.User, error) {
-	args := m.Called(ctx, name, email, password, phone)
+	args := m.Called(ctx, name, email, password, phone, roles)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.User), args.Error(1)
 }
 
-func (m *mockAuthService) Login(ctx context.Context, email, password string) (interface{}, error) {
-	args := m.Called(ctx, email, password)
+func (m *mockAuthService) Login(ctx context.Context, email, password, channel string) (interface{}, error) {
+	args := m.Called(ctx, email, password, channel)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -59,6 +61,78 @@ func (m *mockAuthService) ResetPassword(ctx context.Context, email, code, newPas
 	return args.Error(0)
 }
 
+func (m *mockAuthService) RegisterClient(ctx context.Context, name, email, password, phone string) (*domain.User, error) {
+	args := m.Called(ctx, name, email, password, phone)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
+func (m *mockAuthService) RegisterManagementOwner(ctx context.Context, name, email, password, phone string) (*domain.User, error) {
+	args := m.Called(ctx, name, email, password, phone)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
+func (m *mockAuthService) CreateStandaloneUserByAdmin(ctx context.Context, name, email, password, phone string, channels, roles []string) (*domain.User, error) {
+	args := m.Called(ctx, name, email, password, phone, channels, roles)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
+func (m *mockAuthService) AssignRoleToStandalone(ctx context.Context, userID, role string) ([]string, error) {
+	args := m.Called(ctx, userID, role)
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *mockAuthService) RemoveRoleFromStandalone(ctx context.Context, userID, role string) ([]string, error) {
+	args := m.Called(ctx, userID, role)
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *mockAuthService) ListRolesByUser(ctx context.Context, userID string) ([]domain.RoleDefinition, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).([]domain.RoleDefinition), args.Error(1)
+}
+
+func (m *mockAuthService) CreateCustomRole(ctx context.Context, role string) error {
+	args := m.Called(ctx, role)
+	return args.Error(0)
+}
+
+func (m *mockAuthService) DeleteCustomRole(ctx context.Context, role string) error {
+	args := m.Called(ctx, role)
+	return args.Error(0)
+}
+
+func (m *mockAuthService) ListRoles(ctx context.Context) ([]domain.RoleDefinition, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]domain.RoleDefinition), args.Error(1)
+}
+
+func (m *mockAuthService) RenameCustomRole(ctx context.Context, fromName, toName string) error {
+	args := m.Called(ctx, fromName, toName)
+	return args.Error(0)
+}
+
+func (m *mockAuthService) RefreshWithRefreshToken(ctx context.Context, refreshToken string) (*domain.TokenPair, error) {
+	args := m.Called(ctx, refreshToken)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.TokenPair), args.Error(1)
+}
+
+func (m *mockAuthService) ResendVerificationEmail(ctx context.Context, email string) error {
+	args := m.Called(ctx, email)
+	return args.Error(0)
+}
+
 func TestAuthHandler_Register(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -76,11 +150,15 @@ func TestAuthHandler_Register(t *testing.T) {
 				"phone":    "1234567890",
 			},
 			mockSetup: func(m *mockAuthService) {
-				m.On("Register", mock.Anything, "John Doe", "john@example.com", "password123", "1234567890").Return(&domain.User{
-					ID:    ulid.Make(),
-					Name:  "John Doe",
-					Email: "john@example.com",
-					Phone: "1234567890",
+				m.On("RegisterClient", mock.Anything, "John Doe", "john@example.com", "password123", "1234567890").Return(&domain.User{
+					ID:            ulid.Make(),
+					Name:          "John Doe",
+					Email:         "john@example.com",
+					Phone:         "1234567890",
+					UserType:      domain.UserTypeClient,
+					Channels:      []string{domain.ChannelClientApp},
+					Roles:         []string{domain.RoleUser},
+					EmailVerified: false,
 				}, nil)
 			},
 			expectedStatus: http.StatusCreated,
@@ -100,7 +178,7 @@ func TestAuthHandler_Register(t *testing.T) {
 				"phone":    "1234567890",
 			},
 			mockSetup: func(m *mockAuthService) {
-				m.On("Register", mock.Anything, "John Doe", "john@example.com", "password123", "1234567890").Return(nil, domain.ErrAlreadyExists("User"))
+				m.On("RegisterClient", mock.Anything, "John Doe", "john@example.com", "password123", "1234567890").Return(nil, domain.ErrAlreadyExists("User"))
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody: errors.ErrorResponse{
@@ -155,7 +233,8 @@ func TestAuthHandler_Register(t *testing.T) {
 			tt.mockSetup(mockService)
 
 			// Create handler with mock service
-			handler := NewAuthHandler(mockService, zap.NewNop())
+			testCfg := &config.Config{JWTRefreshDuration: 24 * time.Hour}
+			handler := NewAuthHandler(mockService, testCfg, zap.NewNop())
 
 			// Create test request
 			var body []byte
@@ -168,7 +247,7 @@ func TestAuthHandler_Register(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			// Call handler
-			handler.RegisterHandler(w, req)
+			handler.RegisterClientHandler(w, req)
 
 			// Assert response
 			assert.Equal(t, tt.expectedStatus, w.Code)
@@ -181,6 +260,8 @@ func TestAuthHandler_Register(t *testing.T) {
 				assert.Equal(t, "john@example.com", responseMap["email"])
 				assert.Equal(t, "1234567890", responseMap["phone"])
 				assert.NotEmpty(t, responseMap["id"])
+				assert.Equal(t, "client", responseMap["user_type"])
+				assert.Equal(t, "email_verify", responseMap["status"])
 			} else {
 				var response errors.ErrorResponse
 				err := json.NewDecoder(w.Body).Decode(&response)
@@ -197,7 +278,8 @@ func TestAuthHandler_Register(t *testing.T) {
 func TestAuthHandler_Login(t *testing.T) {
 	logger, _ := zap.NewProduction()
 	mockService := new(mockAuthService)
-	handler := NewAuthHandler(mockService, logger)
+	testCfg := &config.Config{JWTRefreshDuration: 24 * time.Hour}
+	handler := NewAuthHandler(mockService, testCfg, logger)
 
 	tests := []struct {
 		name           string
@@ -211,9 +293,10 @@ func TestAuthHandler_Login(t *testing.T) {
 			requestBody: map[string]string{
 				"email":    "test@example.com",
 				"password": "password123",
+				"channel":  "management_panel",
 			},
 			mockSetup: func() {
-				mockService.On("Login", mock.Anything, "test@example.com", "password123").
+				mockService.On("Login", mock.Anything, "test@example.com", "password123", "management_panel").
 					Return(
 						&domain.TokenPair{
 							AccessToken:  "access_token",
@@ -223,9 +306,8 @@ func TestAuthHandler_Login(t *testing.T) {
 					)
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody: &domain.TokenPair{
-				AccessToken:  "access_token",
-				RefreshToken: "refresh_token",
+			expectedBody: map[string]string{
+				"access_token": "access_token",
 			},
 		},
 		{
@@ -233,14 +315,15 @@ func TestAuthHandler_Login(t *testing.T) {
 			requestBody: map[string]string{
 				"email":    "test@example.com",
 				"password": "wrongpassword",
+				"channel":  "management_panel",
 			},
 			mockSetup: func() {
-				mockService.On("Login", mock.Anything, "test@example.com", "wrongpassword").
-					Return(nil, domain.ErrInvalidCredentials)
+				mockService.On("Login", mock.Anything, "test@example.com", "wrongpassword", "management_panel").
+					Return(nil, domain.ErrAuthInvalidCredentials)
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody: errors.ErrorResponse{
-				Code:    "U0001",
+				Code:    domain.ErrAuthInvalidCredentials.GetCode(),
 				Message: "Invalid credentials",
 			},
 		},
@@ -261,6 +344,10 @@ func TestAuthHandler_Login(t *testing.T) {
 					{
 						Field:   "password",
 						Message: "password is required",
+					},
+					{
+						Field:   "channel",
+						Message: "channel is required",
 					},
 				},
 			},
@@ -299,10 +386,20 @@ func TestAuthHandler_Login(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, rr.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				var response domain.TokenPair
+				var response map[string]string
 				err := json.NewDecoder(rr.Body).Decode(&response)
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedBody.(*domain.TokenPair), &response)
+				assert.Equal(t, tt.expectedBody.(map[string]string), response)
+				var refresh *http.Cookie
+				for _, c := range rr.Result().Cookies() {
+					if c.Name == refreshTokenCookieName {
+						refresh = c
+						break
+					}
+				}
+				assert.NotNil(t, refresh)
+				assert.Equal(t, "refresh_token", refresh.Value)
+				assert.True(t, refresh.HttpOnly)
 			} else {
 				var response errors.ErrorResponse
 				err := json.NewDecoder(rr.Body).Decode(&response)

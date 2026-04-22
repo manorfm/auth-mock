@@ -70,7 +70,7 @@ func TestOIDC_GetOpenIDConfiguration_E2E(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest("GET", ts.URL+"/.well-known/openid-configuration", nil)
+			req, err := http.NewRequest("GET", ts.URL+"/api/.well-known/openid-configuration", nil)
 			require.NoError(t, err)
 
 			for key, value := range tt.headers {
@@ -88,9 +88,9 @@ func TestOIDC_GetOpenIDConfiguration_E2E(t *testing.T) {
 			err = json.NewDecoder(resp.Body).Decode(&openIDConfig)
 			require.NoError(t, err)
 
-			expectedIssuerURL := tt.expectedIssuer
+			expectedIssuerURL := tt.expectedIssuer + "/api"
 			if tt.useTestServerHost {
-				expectedIssuerURL = ts.URL
+				expectedIssuerURL = ts.URL + "/api"
 			}
 
 			assert.Equal(t, expectedIssuerURL, openIDConfig["issuer"])

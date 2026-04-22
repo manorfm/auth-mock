@@ -8,6 +8,10 @@ type ContextKey string
 const (
 	// ContextKeySubject is the key for the subject (user ID) in the context
 	ContextKeySubject ContextKey = "sub"
+	// ContextKeyRoles is the key for JWT role claims in the context
+	ContextKeyRoles ContextKey = "roles"
+	// ContextKeyChannels is the key for allowed channel claims in the context
+	ContextKeyChannels ContextKey = "channels"
 	// ContextKeyCodeChallenge is the key for the PKCE code challenge in the context
 	ContextKeyCodeChallenge ContextKey = "code_challenge"
 	// ContextKeyCodeChallengeMethod is the key for the PKCE code challenge method in the context
@@ -35,6 +39,18 @@ func WithCodeChallengeMethod(ctx context.Context, method string) context.Context
 func GetSubject(ctx context.Context) (string, bool) {
 	subject, ok := ctx.Value(ContextKeySubject).(string)
 	return subject, ok
+}
+
+// GetRoles returns JWT roles from context when present.
+func GetRoles(ctx context.Context) ([]string, bool) {
+	roles, ok := ctx.Value(ContextKeyRoles).([]string)
+	return roles, ok
+}
+
+// GetChannels returns allowed channels from context when present.
+func GetChannels(ctx context.Context) ([]string, bool) {
+	channels, ok := ctx.Value(ContextKeyChannels).([]string)
+	return channels, ok
 }
 
 // GetCodeChallenge retrieves the PKCE code challenge from the context

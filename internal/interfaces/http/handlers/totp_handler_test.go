@@ -112,7 +112,7 @@ func TestTOTPHandler_EnableTOTP(t *testing.T) {
 			// Create request
 			req := httptest.NewRequest(http.MethodPost, "/totp/enable", nil)
 			if tt.userID != "" {
-				req = req.WithContext(context.WithValue(req.Context(), "sub", tt.userID))
+				req = req.WithContext(context.WithValue(req.Context(), domain.ContextKeySubject, tt.userID))
 			}
 
 			// Create response recorder
@@ -248,7 +248,7 @@ func TestTOTPHandler_VerifyTOTP(t *testing.T) {
 			// Create request
 			req := httptest.NewRequest(http.MethodPost, "/totp/verify", bytes.NewBuffer(body))
 			if tt.userID != "" {
-				req = req.WithContext(context.WithValue(req.Context(), "sub", tt.userID))
+				req = req.WithContext(context.WithValue(req.Context(), domain.ContextKeySubject, tt.userID))
 			}
 
 			// Create response recorder
@@ -373,7 +373,7 @@ func TestTOTPHandler_VerifyBackupCode(t *testing.T) {
 			// Create request
 			req := httptest.NewRequest(http.MethodPost, "/totp/verify-backup", bytes.NewBuffer(body))
 			if tt.userID != "" {
-				req = req.WithContext(context.WithValue(req.Context(), "sub", tt.userID))
+				req = req.WithContext(context.WithValue(req.Context(), domain.ContextKeySubject, tt.userID))
 			}
 
 			// Create response recorder
@@ -454,7 +454,7 @@ func TestTOTPHandler_DisableTOTP(t *testing.T) {
 			// Create request
 			req := httptest.NewRequest(http.MethodPost, "/totp/disable", nil)
 			if tt.userID != "" {
-				req = req.WithContext(context.WithValue(req.Context(), "sub", tt.userID))
+				req = req.WithContext(context.WithValue(req.Context(), domain.ContextKeySubject, tt.userID))
 			}
 
 			// Create response recorder

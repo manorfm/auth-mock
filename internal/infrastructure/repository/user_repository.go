@@ -74,16 +74,18 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain
 	return users, nil
 }
 
-func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
-	user, ok := r.users[user.ID]
+func (r *UserRepository) Update(ctx context.Context, u *domain.User) error {
+	existing, ok := r.users[u.ID]
 	if !ok {
 		return domain.ErrUserNotFound
 	}
-	user.Name = user.Name
-	user.Phone = user.Phone
-	user.UpdatedAt = time.Now()
-	user.EmailVerified = user.EmailVerified
-	user.Roles = user.Roles
+	existing.Name = u.Name
+	existing.Phone = u.Phone
+	existing.UpdatedAt = time.Now()
+	existing.EmailVerified = u.EmailVerified
+	existing.Roles = u.Roles
+	existing.UserType = u.UserType
+	existing.Channels = u.Channels
 	return nil
 }
 

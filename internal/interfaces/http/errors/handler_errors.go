@@ -36,6 +36,17 @@ func getStatus(err domain.Error) int {
 		return http.StatusForbidden
 	case domain.ErrTOTPVerificationRequired.GetCode():
 		return http.StatusForbidden
+	case domain.ErrAuthInvalidCredentials.GetCode():
+		return http.StatusBadRequest
+	case domain.ErrAuthForbiddenChannel.GetCode(),
+		domain.ErrAuthRoleProtected.GetCode(),
+		domain.ErrAuthRoleRequiredMinimum.GetCode(),
+		domain.ErrAuthAdminRequired.GetCode(),
+		domain.ErrAuthUserNotStandalone.GetCode():
+		return http.StatusForbidden
+	case domain.ErrAuthRoleNotFound.GetCode(),
+		domain.ErrAuthRoleAlreadyAssigned.GetCode():
+		return http.StatusBadRequest
 	}
 
 	return http.StatusBadRequest

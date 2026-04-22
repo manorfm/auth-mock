@@ -72,7 +72,7 @@ func TestAccountIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// 3. Login to get token
-		result, err := authService.Login(ctx, "account@example.com", "password123")
+		result, err := authService.Login(ctx, "account@example.com", "password123", domain.ChannelManagementPanel)
 		require.NoError(t, err)
 		assert.NotNil(t, result)
 

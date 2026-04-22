@@ -179,10 +179,20 @@ var (
 	ErrInvalidUserID = NewBusinessError("U0057", "Invalid user ID")
 
 	// Account related errors
-	ErrAccountNotFound        = errNotFound("Account")
-	ErrAccountCreationFailed  = NewInfraError("U0058", "Failed to create account")
-	ErrAccountUpdateFailed    = NewInfraError("U0059", "Failed to update account")
-	ErrAccountDeleteFailed    = NewInfraError("U0060", "Failed to delete account")
+	ErrAccountNotFound       = errNotFound("Account")
+	ErrAccountCreationFailed = NewInfraError("U0058", "Failed to create account")
+	ErrAccountUpdateFailed   = NewInfraError("U0059", "Failed to update account")
+	ErrAccountDeleteFailed   = NewInfraError("U0060", "Failed to delete account")
+
+	// Auth policy errors (canonical codes from identity redesign)
+	ErrAuthInvalidCredentials  = NewBusinessError("U0061", "Invalid credentials")
+	ErrAuthForbiddenChannel    = NewBusinessError("U0062", "Channel not allowed for this user")
+	ErrAuthRoleNotFound        = NewBusinessError("U0063", "Role not found")
+	ErrAuthRoleProtected       = NewBusinessError("U0064", "Role cannot be changed or removed")
+	ErrAuthRoleAlreadyAssigned = NewBusinessError("U0065", "Role already assigned")
+	ErrAuthRoleRequiredMinimum = NewBusinessError("U0066", "Cannot remove required base role")
+	ErrAuthAdminRequired       = NewBusinessError("U0067", "Administrator privileges required")
+	ErrAuthUserNotStandalone   = NewBusinessError("U0068", "Operation allowed only for standalone users")
 )
 
 func (e *BusinessError) GetCode() string {

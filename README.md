@@ -7,7 +7,7 @@
 [![Coverage](https://img.shields.io/badge/Coverage-80%25-brightgreen.svg)](https://github.com/manorfm/auth-mock/actions)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://hub.docker.com/r/manorfm/auth-mock)
 
-A comprehensive mock authentication service designed for testing and development purposes. This service provides a complete authentication system with in-memory JWT key management, role-based access control, and OAuth2/OpenID Connect support.
+A mock authentication service for local testing and integration. It keeps **users, roles, OAuth clients, and verification state in memory** (no database). It issues JWTs with RSA keys in memory, supports **channels** (`client_app` vs `management_panel`), **user types** (`client`, `management`, `standalone`), and OAuth2/OpenID Connect flows used by dependent services.
 
 ## Key Features
 
@@ -22,15 +22,15 @@ A comprehensive mock authentication service designed for testing and development
 - Thread-safe key operations with mutex protection
 
 ### Authentication & Authorization
-- Role-based access control (RBAC)
+- **RBAC** with fixed system roles `root`, `admin`, `user` plus **custom roles** (in-memory catalog; admin-managed)
+- **Registration by channel**: public `client` and `management` signup; **standalone** users only via admin API
+- **Login** requires `channel` in the JSON body; JWTs carry `roles`, `user_type`, and `channels`
+- **Refresh token** returned as an **HTTP-only cookie** (`refresh_token` on path `/api`); access token in JSON for login and MFA completion
 - OAuth2/OpenID Connect protocol support
-- Multi-factor authentication (MFA) with TOTP
-- Backup codes for MFA recovery
-- MFA ticket-based verification flow
-- Email verification system
-- Password reset functionality
-- Rate limiting with configurable thresholds
-- Account management system with automatic account creation
+- MFA with TOTP, backup codes, and MFA ticket flow when TOTP is enabled
+- Email verification and password reset (optional SMTP)
+- **Stricter rate limiting** on management signup, login/MFA, and admin routes (in addition to the global limiter)
+- Account records created with each new user
 
 ### Security Features
 - In-memory RSA key pairs (2048-bit by default)
@@ -46,18 +46,13 @@ A comprehensive mock authentication service designed for testing and development
 - JWT token durations (access and refresh)
 - RSA key size (default: 2048 bits)
 - JWKS cache duration
+- **`REFRESH_COOKIE_SECURE`**: set to `true` in HTTPS deployments so the refresh cookie is marked `Secure`
 - SMTP settings for email delivery
-- Default user configuration
+- Default user configuration (optional bootstrap user on startup)
 - Custom claims fields
 - TOTP settings (issuer, algorithm, digits, period)
 - Backup codes configuration
-
-### Observability
-- OpenTelemetry integration
-- Structured logging with Zap
-- Distributed tracing
-- Metrics collection
-- Performance monitoring
+- Structured logging with **Zap** (including audit-style fields on sensitive admin actions)
 
 ## Architecture
 
@@ -86,23 +81,17 @@ Key features of the JWT implementation:
 - Support for custom claims and dynamic fields
 - Comprehensive error handling for token operations
 
-### Error Handling
+### Error handling
 
-The service implements a comprehensive error handling system with:
-
-- Domain-specific error types (`BusinessError` and `InfraError`)
-- Standardized error codes (U0001-U0057)
-- Detailed error messages and codes
-- Proper error wrapping and context
-- HTTP status code mapping
+- Domain errors map to JSON `code`, `message`, and optional `details` (validation)
+- Wire codes are the **`U00xx`** values below; `internal/domain/errors.go` is the source of truth if the code and README diverge
 
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.23 or later
-- PostgreSQL
-- Make
+- Make (optional)
 - Docker (optional)
 
 ### Environment Variables
@@ -119,6 +108,12 @@ JWKS_CACHE_DURATION=1h
 # Server Configuration
 PORT=8080
 SERVER_URL=http://localhost:8080
+
+# Email verification gate (if true, login requires verified email)
+EMAIL_ENABLED=false
+
+# Refresh cookie (set true behind HTTPS)
+REFRESH_COOKIE_SECURE=false
 
 # Default User Configuration
 DEFAULT_USER_EMAIL=admin@example.com
@@ -152,9 +147,6 @@ CUSTOM_CLAIMS_FIELDS={"custom_field":"value"}
 # Install dependencies
 make deps
 
-# Run migrations
-make migrate-up
-
 # Start the application
 make run
 
@@ -164,7 +156,7 @@ make test
 # Run linter
 make lint
 
-# Generate Swagger documentation
+# Generate Swagger documentation (requires swag)
 make swagger
 ```
 
@@ -186,140 +178,147 @@ The API documentation is available through Swagger UI. Once the application is r
 http://localhost:8080/swagger/index.html
 ```
 
-### Authentication Flow
+### Authentication flow
 
-1. Register a new user using the `/api/register` endpoint
-2. Login using the `/api/auth/login` endpoint to get your access token
-3. Include the token in the `Authorization` header of subsequent requests:
+1. **Register** with the endpoint that matches the product:
+   - `POST /api/auth/register/client` — consumer app; user type `client`, channel `client_app`, role `user`
+   - `POST /api/auth/register/management` — management panel; user type `management`, channel `management_panel`, role `user`
+2. If `EMAIL_ENABLED=true`, complete **`POST /api/auth/verify-email`** before login; registration responses use `status: "email_verify"` until verified.
+3. **Login** with `POST /api/auth/login` and body including **`channel`** (`client_app` or `management_panel`). The JSON response contains **`access_token` only**; the **`refresh_token`** is set in a cookie (see env `REFRESH_COOKIE_SECURE`).
+4. If TOTP is enabled, login returns an **MFA ticket** JSON (unchanged shape); then call **`POST /api/auth/verify-mfa`** — on success you get the same cookie + JSON access token pattern as login.
+5. Call protected routes with:
    ```
-   Authorization: Bearer <your-access-token>
+   Authorization: Bearer <access_token>
    ```
+   Protected routes in this mock expect the **`management_panel`** channel in the JWT (OIDC, TOTP, accounts, user profile, OAuth2 client CRUD).
 
-### Available Endpoints
+### Available endpoints
 
-#### Public Endpoints
-- `POST /api/register` - Register a new user
-- `POST /api/auth/login` - Login and get access token
-- `POST /api/auth/verify-email` - Verify email address
-- `POST /api/auth/request-password-reset` - Request password reset
-- `POST /api/auth/reset-password` - Reset password
-- `POST /api/auth/verify-mfa` - Verify MFA code
-- `GET /.well-known/openid-configuration` - OpenID Provider Configuration
-- `GET /.well-known/jwks.json` - JSON Web Key Set
+#### Public
+- `POST /api/auth/register/client` — public signup (client app)
+- `POST /api/auth/register/management` — public signup (management; stricter rate limit)
+- `POST /api/auth/login` — email + password + **`channel`** (stricter rate limit)
+- `POST /api/auth/verify-mfa` — exchange MFA ticket for tokens (stricter rate limit)
+- `POST /api/auth/verify-email` — verify email code
+- `POST /api/auth/request-password-reset` — request reset code
+- `POST /api/auth/reset-password` — reset password
+- `GET /.well-known/openid-configuration` — OpenID Provider metadata
+- `GET /.well-known/jwks.json` — JWKS
 
-#### Protected Endpoints (Requires Authentication)
-- `GET /api/users/{id}` - Get user by ID
-- `PUT /api/users/{id}` - Update user by ID
-- `GET /api/oauth2/authorize` - OAuth2 authorization endpoint
-- `POST /api/oauth2/token` - OAuth2 token endpoint
-- `GET /api/oauth2/userinfo` - Get user information
-- `POST /api/totp/enable` - Enable TOTP for user
-- `POST /api/totp/verify` - Verify TOTP code
-- `POST /api/totp/verify-backup` - Verify TOTP backup code
-- `POST /api/totp/disable` - Disable TOTP for user
-- `GET /api/accounts` - Get current user's account
-- `GET /api/accounts/me` - Get current user's account with user data and MFA status
-- `PUT /api/accounts` - Update current user's account status
-- `DELETE /api/accounts` - Delete current user's account
+#### Protected (Bearer token + JWT must allow `management_panel`)
+- `GET /api/users/{id}`, `PUT /api/users/{id}`
+- `GET /api/oauth2/authorize`, `POST /api/oauth2/token`, `GET /api/oauth2/userinfo`
+- `POST /api/oauth2/clients`, `GET /api/oauth2/clients/{id}`, `PUT /api/oauth2/clients/{id}`, `DELETE /api/oauth2/clients/{id}`
+- `POST /api/totp/enable`, `POST /api/totp/verify`, `POST /api/totp/verify-backup`, `POST /api/totp/disable`
+- `GET /api/accounts`, `GET /api/accounts/me`, `PUT /api/accounts`, `DELETE /api/accounts`
 
-#### Admin Endpoints (Requires Admin Role)
-- `GET /api/users` - List all users
-- `GET /api/oauth2/clients` - List OAuth2 clients
-- `POST /api/oauth2/clients` - Create OAuth2 client
-- `GET /api/oauth2/clients/{id}` - Get OAuth2 client
-- `PUT /api/oauth2/clients/{id}` - Update OAuth2 client
-- `DELETE /api/oauth2/clients/{id}` - Delete OAuth2 client
+#### Admin (`root` or `admin` role; stricter rate limit)
+- `GET /api/users` — list users
+- `GET /api/oauth2/clients` — list OAuth2 clients (read-only listing here; client CRUD lives under protected routes above)
+- `POST /api/admin/users/standalone` — create **standalone** user (no `admin`/`root` in payload)
+- `POST /api/admin/users/{id}/roles`, `DELETE /api/admin/users/{id}/roles/{role}`, `GET /api/admin/users/{id}/roles` — roles for **standalone** users only
+- `GET /api/admin/roles`, `POST /api/admin/roles`, `PUT /api/admin/roles/{name}`, `DELETE /api/admin/roles/{name}` — custom role catalog (system roles cannot be renamed/deleted)
+
+#### Health
+- `GET /health`, `GET /health/ready`, `GET /health/live`
 
 
-### Error Responses
+### Error responses
 
-The API uses standard HTTP status codes and returns error details in the following format:
+Responses use JSON with `code` and `message` (and optional `details` for validation). HTTP status is chosen per handler (e.g. `400` for bad input or business rules, `401`/`403` for authentication/authorization).
 
-```json
-{
-  "code": "ERROR_CODE",
-  "message": "Error message"
-}
-```
+All domain error codes emitted by this service are listed below. **`U0061`–`U0068`** are identity/RBAC policy errors (same situations often described elsewhere as “auth policy”); the Go symbols are `ErrAuth*` in `errors.go`. **`U0006` and `U0017` are not defined** in the current codebase.
 
-Common error codes:
-- `U0001` - Invalid credentials
-- `U0002` - Invalid client
-- `U0003` - Invalid authorization code
-- `U0004` - Authorization code expired
-- `U0005` - Invalid PKCE
-- `U0006` - Invalid user ID
-- `U0007` - Resource not found
-- `U0008` - Invalid resource
-- `U0009` - Resource already exists
-- `U0010` - Invalid scope
-- `U0011` - Invalid field
-- `U0012` - Path parameter not found
-- `U0013` - Invalid request body
-- `U0014` - Unauthorized
-- `U0015` - Internal server error
-- `U0016` - Failed to generate token
-- `U0018` - Forbidden
-- `U0019` - Invalid token
-- `U0020` - Invalid duration
-- `U0021` - Token expired
-- `U0022` - Token not yet valid
-- `U0023` - Token has no roles
-- `U0024` - Token subject required
-- `U0025` - Invalid claims
-- `U0026` - Token blacklisted
-- `U0027` - Token generation failed
-- `U0028` - Invalid key configuration
-- `U0029` - Invalid signing method
-- `U0030` - Invalid signature
-- `U0031` - Invalid redirect URI
-- `U0032` - Invalid code challenge method
-- `U0033` - Invalid code challenge
-- `U0034` - Email not verified
-- `U0035` - Invalid verification code
-- `U0036` - Verification code expired
-- `U0037` - Invalid password change code
-- `U0038` - Password change code expired
-- `U0039` - Email send failed
-- `U0040` - Missing SMTP configuration
-- `U0041` - Invalid email
-- `U0042` - Token signature invalid
-- `U0043` - Token malformed
-- `U0044` - Token has no roles
-- `U0045` - TOTP not enabled
-- `U0046` - TOTP already enabled
-- `U0047` - Invalid TOTP code
-- `U0048` - TOTP secret generation failed
-- `U0049` - TOTP QR generation failed
-- `U0050` - TOTP backup codes generation failed
-- `U0051` - Invalid TOTP backup code
-- `U0052` - TOTP backup codes exhausted
-- `U0053` - TOTP verification required
-- `U0054` - Invalid MFA ticket
-- `U0055` - MFA ticket expired
-- `U0056` - MFA ticket already used
-- `U0057` - Invalid user ID
-- `U0058` - Failed to create account
-- `U0059` - Failed to update account
-- `U0060` - Failed to delete account
+#### Business / validation (`U0001`–`U0068`)
+
+| Code | Typical `message` |
+|------|-------------------|
+| `U0001` | Invalid credentials |
+| `U0002` | Invalid client |
+| `U0003` | Invalid authorization code |
+| `U0004` | Authorization code expired |
+| `U0005` | Invalid PKCE |
+| `U0007` | `{resource} not found` (e.g. User, Client, Account) |
+| `U0008` | `{resource} is invalid` |
+| `U0009` | `{resource} already exists` (e.g. User, Client) |
+| `U0010` | Invalid scope |
+| `U0011` | Invalid field |
+| `U0012` | Path parameter not found |
+| `U0013` | Invalid request body |
+| `U0014` | Unauthorized |
+| `U0018` | Forbidden |
+| `U0019` | Invalid token |
+| `U0020` | Varies (invalid duration / validation text from `ErrInvalidDuration`) |
+| `U0021` | Token expired **or** Token issued in the future |
+| `U0022` | Token not yet valid |
+| `U0023` | Token has no roles |
+| `U0024` | Token subject is required |
+| `U0025` | Invalid claims |
+| `U0026` | Token blacklisted |
+| `U0029` | Invalid signing method |
+| `U0030` | Invalid signature |
+| `U0031` | Invalid redirect URI |
+| `U0032` | Invalid code challenge method |
+| `U0033` | Invalid code challenge |
+| `U0034` | Email not verified |
+| `U0035` | Invalid verification code |
+| `U0036` | Verification code expired |
+| `U0037` | Invalid password change code |
+| `U0038` | Password change code expired |
+| `U0040` | missing necessary SMTP configuration |
+| `U0041` | invalid email address |
+| `U0042` | Token signature is invalid |
+| `U0043` | Token malformed |
+| `U0044` | Token has no roles |
+| `U0045` | TOTP is not enabled for this user |
+| `U0046` | TOTP is already enabled for this user |
+| `U0047` | Invalid TOTP code |
+| `U0051` | Invalid TOTP backup code |
+| `U0052` | All TOTP backup codes have been used |
+| `U0053` | TOTP verification required |
+| `U0054` | Invalid MFA ticket |
+| `U0055` | MFA ticket expired |
+| `U0056` | MFA ticket already used |
+| `U0057` | Invalid user ID |
+| `U0061` | Invalid credentials (login / channel policy; `ErrAuthInvalidCredentials`) |
+| `U0062` | Channel not allowed for this user (`ErrAuthForbiddenChannel`) |
+| `U0063` | Role not found (`ErrAuthRoleNotFound`) |
+| `U0064` | Role cannot be changed or removed (`ErrAuthRoleProtected`) |
+| `U0065` | Role already assigned (`ErrAuthRoleAlreadyAssigned`) |
+| `U0066` | Cannot remove required base role (`ErrAuthRoleRequiredMinimum`) |
+| `U0067` | Administrator privileges required (`ErrAuthAdminRequired`) |
+| `U0068` | Operation allowed only for standalone users (`ErrAuthUserNotStandalone`) |
+
+#### Infrastructure (`U0015`, `U0016`, `U0027`, `U0028`, `U0039`, `U0048`–`U0050`, `U0058`–`U0060`)
+
+| Code | Typical `message` |
+|------|-------------------|
+| `U0015` | Internal server error |
+| `U0016` | Failed to generate token |
+| `U0027` | Failed to generate token |
+| `U0028` | Invalid key configuration |
+| `U0039` | Failed to send email |
+| `U0048` | Failed to generate TOTP secret |
+| `U0049` | Failed to generate TOTP QR code |
+| `U0050` | Failed to generate TOTP backup codes |
+| `U0058` | Failed to create account |
+| `U0059` | Failed to update account |
+| `U0060` | Failed to delete account |
 
 ## Project Structure
 
 ```
 .
-├── cmd/                    # Application entry points
-│   ├── main.go            # Main application
-│   └── migrate/           # Migration tool
-├── internal/              # Private application code
-│   ├── domain/           # Domain entities and interfaces
-│   ├── application/      # Use cases and business logic
-│   ├── infrastructure/   # External services implementation
-│   │   ├── jwt/         # JWT service implementation
-│   │   ├── postgres/    # PostgreSQL implementation
-│   │   ├── email/       # Email service implementation
-│   └── interfaces/       # HTTP handlers and middlewares
-├── docs/                # Documentation and Swagger files
-└── bin/                 # Compiled binaries
+├── cmd/
+│   └── main.go                 # HTTP server entrypoint
+├── internal/
+│   ├── domain/                 # Entities, auth contracts, errors
+│   ├── application/            # Auth, account, OAuth, OIDC, TOTP services
+│   ├── infrastructure/       # JWT, email, config, in-memory repositories
+│   └── interfaces/http/      # Chi router, handlers, middlewares
+├── docs/                       # Swagger JSON (generated)
+├── test/integration/         # Integration tests
+└── bin/                        # Built binary (`make build`)
 ```
 
 

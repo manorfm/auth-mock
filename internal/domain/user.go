@@ -21,11 +21,26 @@ type User struct {
 	Password      string     `json:"-"` // Password is not serialized to JSON
 	Phone         string     `json:"phone"`
 	Roles         []string   `json:"roles"`
+	UserType      string     `json:"user_type"`
+	Channels      []string   `json:"allowed_channels"`
 	EmailVerified bool       `json:"email_verified"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
 }
+
+const (
+	UserTypeClient     = "client"
+	UserTypeManagement = "management"
+	UserTypeStandalone = "standalone"
+
+	ChannelClientApp       = "client_app"
+	ChannelManagementPanel = "management_panel"
+
+	RoleRoot  = "root"
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+)
 
 // CreateUserRequest represents the request to create a new user
 type CreateUserRequest struct {
@@ -45,6 +60,7 @@ type UpdateUserRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
+	Channel  string `json:"channel" validate:"required"`
 }
 
 // NewUser creates a new user instance

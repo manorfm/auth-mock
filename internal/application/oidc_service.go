@@ -2,7 +2,7 @@ package application
 
 import (
 	"context"
-	"net/http" // Added
+	"net/http"
 	"strings"
 
 	"github.com/manorfm/auth-mock/internal/domain"
@@ -111,14 +111,19 @@ func (s *OIDCService) GetOpenIDConfiguration(ctx context.Context) (map[string]in
 		return nil, domain.ErrInternal
 	}
 
-	serverURL := s.getServerURL(ctx)
+	origin := strings.TrimSuffix(s.getServerURL(ctx), "/")
+	base := s.config.EffectiveAPIBasePath()
+	issuer := origin
+	if base != "/" {
+		issuer = origin + base
+	}
 
 	return map[string]interface{}{
-		"issuer":                                serverURL,
-		"authorization_endpoint":                serverURL + "/oauth2/authorize",
-		"token_endpoint":                        serverURL + "/oauth2/token",
-		"userinfo_endpoint":                     serverURL + "/oauth2/userinfo",
-		"jwks_uri":                              serverURL + "/.well-known/jwks.json",
+		"issuer":                                issuer,
+		"authorization_endpoint":                issuer + "/oauth2/authorize",
+		"token_endpoint":                        issuer + "/oauth2/token",
+		"userinfo_endpoint":                     issuer + "/oauth2/userinfo",
+		"jwks_uri":                              issuer + "/.well-known/jwks.json",
 		"response_types_supported":              []string{"code", "token", "id_token"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},

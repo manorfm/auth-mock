@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -38,14 +37,9 @@ func NewOIDCHandler(oidcService domain.OIDCService, jwtService domain.JWTService
 }
 
 func (h *OIDCHandler) GetUserInfoHandler(w http.ResponseWriter, r *http.Request) {
-	h.logger.Debug("Getting user info from context",
-		zap.Any("sub", r.Context().Value("sub")),
-		zap.Any("roles", r.Context().Value("roles")))
-
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		h.logger.Error("Failed to get user ID from context",
-			zap.Any("user_id", r.Context().Value("sub")),
 			zap.Bool("ok", ok))
 		errors.RespondWithError(w, domain.ErrUnauthorized)
 		return
@@ -269,7 +263,7 @@ func (h *OIDCHandler) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get user ID from context (set by auth middleware)
-	userID, ok := r.Context().Value("sub").(string)
+	userID, ok := domain.GetSubject(r.Context())
 	if !ok || userID == "" {
 		h.logger.Error("User not authenticated")
 		errors.RespondWithError(w, domain.ErrUnauthorized)
@@ -277,8 +271,8 @@ func (h *OIDCHandler) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add PKCE parameters to context
-	ctx := context.WithValue(r.Context(), "code_challenge", codeChallenge)
-	ctx = context.WithValue(ctx, "code_challenge_method", codeChallengeMethod)
+	ctx := domain.WithCodeChallenge(r.Context(), codeChallenge)
+	ctx = domain.WithCodeChallengeMethod(ctx, codeChallengeMethod)
 
 	// Generate authorization code
 	code, err := h.oidcService.Authorize(ctx, clientID, redirectURI, state, scope)

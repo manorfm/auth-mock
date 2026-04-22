@@ -44,6 +44,31 @@ type Config struct {
 
 	// Custom claims fields
 	CustomClaimsFields string
+
+	// RefreshCookieSecure sets the Secure flag on the refresh_token cookie (enable in HTTPS deployments).
+	RefreshCookieSecure bool
+
+	// APIBasePath is the HTTP prefix for all API routes (e.g. "/api"). Used for routing, OIDC discovery URLs, and refresh cookie Path.
+	APIBasePath string
+}
+
+// EffectiveAPIBasePath returns a normalized API prefix (leading slash, no trailing slash except the root "/").
+// Empty config defaults to "/api".
+func (c *Config) EffectiveAPIBasePath() string {
+	if c == nil {
+		return "/api"
+	}
+	p := strings.TrimSpace(c.APIBasePath)
+	if p == "" {
+		return "/api"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if p == "/" {
+		return "/"
+	}
+	return strings.TrimSuffix(p, "/")
 }
 
 // LoadConfig loads configuration from environment variables, logging with zap
@@ -97,6 +122,8 @@ func LoadConfig(logger *zap.Logger) (*Config, error) {
 		DefaultUserPassword: getEnv("DEFAULT_USER_PASSWORD", ""),
 		DefaultUserRoles:    strings.Split(getEnv("DEFAULT_USER_ROLES", "admin"), ","),
 		CustomClaimsFields:  getEnv("CUSTOM_CLAIMS_FIELDS", ""),
+		RefreshCookieSecure: getEnv("REFRESH_COOKIE_SECURE", "false") == "true",
+		APIBasePath:         getEnv("API_BASE_PATH", "/api"),
 	}
 
 	// Load numeric and duration values with error handling

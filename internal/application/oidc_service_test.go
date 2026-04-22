@@ -656,11 +656,11 @@ func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 				// No mock setup needed
 			},
 			expectedConfig: map[string]interface{}{
-				"issuer":                                "http://localhost:8080",
-				"authorization_endpoint":                "http://localhost:8080/oauth2/authorize",
-				"token_endpoint":                        "http://localhost:8080/oauth2/token",
-				"userinfo_endpoint":                     "http://localhost:8080/oauth2/userinfo",
-				"jwks_uri":                              "http://localhost:8080/.well-known/jwks.json",
+				"issuer":                                "http://localhost:8080/api",
+				"authorization_endpoint":                "http://localhost:8080/api/oauth2/authorize",
+				"token_endpoint":                        "http://localhost:8080/api/oauth2/token",
+				"userinfo_endpoint":                     "http://localhost:8080/api/oauth2/userinfo",
+				"jwks_uri":                              "http://localhost:8080/api/.well-known/jwks.json",
 				"response_types_supported":              []string{"code", "token", "id_token"},
 				"subject_types_supported":               []string{"public"},
 				"id_token_signing_alg_values_supported": []string{"RS256"},
