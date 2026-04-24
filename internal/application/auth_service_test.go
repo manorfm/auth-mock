@@ -840,6 +840,7 @@ func TestAuthService_Login(t *testing.T) {
 		mockSetup     func(*MockUserRepository)
 		email         string
 		password      string
+		channel       string
 		expectedError error
 		expectedToken *domain.TokenPair
 	}{
@@ -850,6 +851,7 @@ func TestAuthService_Login(t *testing.T) {
 			},
 			email:         "nonexistent@example.com",
 			password:      "password123",
+			channel:       domain.ChannelManagementPanel,
 			expectedError: domain.ErrAuthInvalidCredentials,
 			expectedToken: nil,
 		},
@@ -868,6 +870,7 @@ func TestAuthService_Login(t *testing.T) {
 			},
 			email:         "test@example.com",
 			password:      "wrongpassword",
+			channel:       domain.ChannelManagementPanel,
 			expectedError: domain.ErrAuthInvalidCredentials,
 			expectedToken: nil,
 		},
@@ -886,6 +889,7 @@ func TestAuthService_Login(t *testing.T) {
 			},
 			email:         "test@example.com",
 			password:      "correctpassword",
+			channel:       domain.ChannelManagementPanel,
 			expectedError: domain.ErrEmailNotVerified,
 			expectedToken: nil,
 		},
@@ -904,6 +908,26 @@ func TestAuthService_Login(t *testing.T) {
 			},
 			email:         "test@example.com",
 			password:      "correctpassword",
+			channel:       domain.ChannelManagementPanel,
+			expectedError: nil,
+			expectedToken: &domain.TokenPair{},
+		},
+		{
+			name: "successful login with empty channel defaults to management panel",
+			mockSetup: func(mockRepo *MockUserRepository) {
+				hashedPassword, _ := password.HashPassword("correctpassword")
+				mockRepo.On("FindByEmail", mock.Anything, "test@example.com").Return(&domain.User{
+					ID:            ulid.Make(),
+					Email:         "test@example.com",
+					Password:      hashedPassword,
+					Roles:         []string{"user"},
+					Channels:      []string{domain.ChannelManagementPanel},
+					EmailVerified: true,
+				}, nil)
+			},
+			email:         "test@example.com",
+			password:      "correctpassword",
+			channel:       "",
 			expectedError: nil,
 			expectedToken: &domain.TokenPair{},
 		},
@@ -940,7 +964,7 @@ func TestAuthService_Login(t *testing.T) {
 				}, nil)
 			}
 
-			token, err := service.Login(context.Background(), tt.email, tt.password, domain.ChannelManagementPanel)
+			token, err := service.Login(context.Background(), tt.email, tt.password, tt.channel)
 			if tt.expectedError != nil {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tt.expectedError)

@@ -184,7 +184,7 @@ http://localhost:8080/swagger/index.html
    - `POST /api/auth/register/client` — consumer app; user type `client`, channel `client_app`, role `user`
    - `POST /api/auth/register/management` — management panel; user type `management`, channel `management_panel`, role `user`
 2. If `EMAIL_ENABLED=true`, complete **`POST /api/auth/verify-email`** before login; registration responses use `status: "email_verify"` until verified.
-3. **Login** with `POST /api/auth/login` and body including **`channel`** (`client_app` or `management_panel`). The JSON response contains **`access_token` only**; the **`refresh_token`** is set in a cookie (see env `REFRESH_COOKIE_SECURE`).
+3. **Login** with `POST /api/auth/login` using `email` + `password`; `channel` is optional (`client_app` or `management_panel`) and defaults to `management_panel` when omitted. The JSON response contains **`access_token` only**; the **`refresh_token`** is set in a cookie (see env `REFRESH_COOKIE_SECURE`).
 4. If TOTP is enabled, login returns an **MFA ticket** JSON (unchanged shape); then call **`POST /api/auth/verify-mfa`** — on success you get the same cookie + JSON access token pattern as login.
 5. Call protected routes with:
    ```
@@ -197,7 +197,7 @@ http://localhost:8080/swagger/index.html
 #### Public
 - `POST /api/auth/register/client` — public signup (client app)
 - `POST /api/auth/register/management` — public signup (management; stricter rate limit)
-- `POST /api/auth/login` — email + password + **`channel`** (stricter rate limit)
+- `POST /api/auth/login` — email + password (+ optional `channel`, default `management_panel`) (stricter rate limit)
 - `POST /api/auth/verify-mfa` — exchange MFA ticket for tokens (stricter rate limit)
 - `POST /api/auth/verify-email` — verify email code
 - `POST /api/auth/request-password-reset` — request reset code

@@ -185,6 +185,9 @@ func (s *AuthService) registerWithProfile(ctx context.Context, name, email, pass
 
 func (s *AuthService) Login(ctx context.Context, email, password, channel string) (interface{}, error) {
 	channel = strings.TrimSpace(strings.ToLower(channel))
+	if channel == "" {
+		channel = domain.ChannelManagementPanel
+	}
 	if err := validateChannels([]string{channel}); err != nil {
 		return nil, err
 	}

@@ -60,7 +60,7 @@ type UpdateUserRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
-	Channel  string `json:"channel" validate:"required"`
+	Channel  string `json:"channel"`
 }
 
 // NewUser creates a new user instance

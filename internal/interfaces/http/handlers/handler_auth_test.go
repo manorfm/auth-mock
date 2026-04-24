@@ -345,11 +345,28 @@ func TestAuthHandler_Login(t *testing.T) {
 						Field:   "password",
 						Message: "password is required",
 					},
-					{
-						Field:   "channel",
-						Message: "channel is required",
-					},
 				},
+			},
+		},
+		{
+			name: "successful login without channel defaults to management panel",
+			requestBody: map[string]string{
+				"email":    "test@example.com",
+				"password": "password123",
+			},
+			mockSetup: func() {
+				mockService.On("Login", mock.Anything, "test@example.com", "password123", "").
+					Return(
+						&domain.TokenPair{
+							AccessToken:  "access_token",
+							RefreshToken: "refresh_token",
+						},
+						nil,
+					)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]string{
+				"access_token": "access_token",
 			},
 		},
 		{
