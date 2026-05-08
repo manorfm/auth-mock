@@ -133,17 +133,18 @@ func (s *AuthService) registerWithProfile(ctx context.Context, name, email, pass
 
 	// Create user
 	user := &domain.User{
-		ID:            ulid.Make(),
-		Name:          name,
-		Email:         email,
-		Password:      string(hashedPassword),
-		Phone:         phone,
-		Roles:         roles,
-		UserType:      userType,
-		Channels:      channels,
-		EmailVerified: emailVerified,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		ID:             ulid.Make(),
+		Name:           name,
+		Email:          email,
+		Password:       string(hashedPassword),
+		Phone:          phone,
+		Roles:          roles,
+		UserType:       userType,
+		Channels:       channels,
+		EmailVerified:  emailVerified,
+		SessionVersion: 1,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {

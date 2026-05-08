@@ -63,7 +63,8 @@ func TestAuthService_Integration(t *testing.T) {
 	}
 	jwtStrategy, err := jwt.NewLocalStrategy(cfg, logger)
 	require.NoError(t, err)
-	jwtService := jwt.NewJWTService(jwtStrategy, cfg, logger)
+	jwtService, err := jwt.NewJWTService(jwtStrategy, cfg, logger, nil)
+	require.NoError(t, err)
 
 	// Setup TOTP service
 	totpGenerator := totp.NewGenerator(logger)

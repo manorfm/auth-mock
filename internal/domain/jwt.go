@@ -12,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/manorfm/auth-mock/internal/infrastructure/config"
+	"github.com/oklog/ulid/v2"
 )
 
 // JWT defines the interface for JWT operations
@@ -42,7 +43,14 @@ type Claims struct {
 	Name     string                 `json:"name"`
 	UserType string                 `json:"user_type"`
 	Channels []string               `json:"channels"`
-	Extra    map[string]interface{} `json:"-"`
+	// SessionVersion is embedded in JWT as claim "sv"; must match User.SessionVersion at validation time.
+	SessionVersion int64                  `json:"sv"`
+	Extra          map[string]interface{} `json:"-"`
+}
+
+// SessionVersionSource returns the current session version for a user (for invalidating all issued tokens).
+type SessionVersionSource interface {
+	GetSessionVersion(ctx context.Context, userID ulid.ULID) (int64, error)
 }
 
 // Valid implements the jwt.Claims interface
@@ -172,6 +180,13 @@ func generateKeyID(key *rsa.PrivateKey) string {
 
 	// Encode as base64url without padding
 	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
+
+// TokenRevocationStore records revoked JWT identifiers (typically jti) until they expire.
+// This service uses an in-process implementation only (no external datastore).
+type TokenRevocationStore interface {
+	Revoke(ctx context.Context, jti string, expiresAt time.Time) error
+	IsRevoked(ctx context.Context, jti string) (bool, error)
 }
 
 // This allows for easier mocking in tests

@@ -115,7 +115,8 @@ func TestOIDC_GetOpenIDConfiguration_E2E(t *testing.T) {
 		minimalRouterCfg := &config.Config{RSAKeySize: 2048}
 		strategyForNilTest, err := jwt.NewLocalStrategy(minimalRouterCfg, logger)
 		require.NoError(t, err)
-		jwtServiceForNilTest := jwt.NewJWTService(strategyForNilTest, minimalRouterCfg, logger)
+		jwtServiceForNilTest, err := jwt.NewJWTService(strategyForNilTest, minimalRouterCfg, logger, nil)
+		require.NoError(t, err)
 		oauth2ServiceForNilTest := application.NewOAuth2Service(oauthRepo, logger)
 
 		nilConfigOIDCService := application.NewOIDCService(oauth2ServiceForNilTest, jwtServiceForNilTest, userRepo, localTotpService, nil, logger)
@@ -123,7 +124,8 @@ func TestOIDC_GetOpenIDConfiguration_E2E(t *testing.T) {
 		minimalTestCfg := &config.Config{RSAKeySize: 2048}
 		strategy, err := jwt.NewLocalStrategy(minimalTestCfg, logger)
 		require.NoError(t, err)
-		testJwtService := jwt.NewJWTService(strategy, minimalTestCfg, logger)
+		testJwtService, err := jwt.NewJWTService(strategy, minimalTestCfg, logger, nil)
+		require.NoError(t, err)
 
 		handler := handlers.NewOIDCHandler(nilConfigOIDCService, testJwtService, logger)
 

@@ -177,6 +177,8 @@ func (h *OIDCHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 			switch err {
 			case domain.ErrInvalidCredentials:
 				errors.RespondWithError(w, domain.ErrInvalidCredentials)
+			case domain.ErrTokenBlacklisted:
+				errors.RespondWithError(w, domain.ErrTokenBlacklisted)
 			default:
 				errors.RespondWithError(w, domain.ErrInternal)
 			}

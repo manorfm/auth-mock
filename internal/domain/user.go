@@ -24,6 +24,8 @@ type User struct {
 	UserType      string     `json:"user_type"`
 	Channels      []string   `json:"allowed_channels"`
 	EmailVerified bool       `json:"email_verified"`
+	// SessionVersion increments when credentials are rotated (e.g. password reset); JWTs carry this in claim "sv".
+	SessionVersion int64     `json:"session_version,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
@@ -68,14 +70,15 @@ func NewUser(name, email, password, phone string) (*User, error) {
 	id := ulid.Make()
 
 	user := &User{
-		ID:        id,
-		Name:      name,
-		Email:     email,
-		Password:  password,
-		Phone:     phone,
-		Roles:     []string{"user"}, // Default role
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:             id,
+		Name:           name,
+		Email:          email,
+		Password:       password,
+		Phone:          phone,
+		Roles:          []string{"user"}, // Default role
+		SessionVersion: 1,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	return user, nil

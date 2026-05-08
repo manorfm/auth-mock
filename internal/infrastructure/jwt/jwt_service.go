@@ -17,13 +17,13 @@ import (
 )
 
 type jwtService struct {
-	strategy  domain.JWTStrategy
-	logger    *zap.Logger
-	config    *config.Config
-	mu        sync.RWMutex
-	cache     *jwksCache
-	blacklist map[string]time.Time // tokenID -> expiration
-	stopChan  chan struct{}        // Channel to stop cleanup goroutine
+	strategy   domain.JWTStrategy
+	logger     *zap.Logger
+	config     *config.Config
+	mu         sync.RWMutex
+	cache      *jwksCache
+	revocation domain.TokenRevocationStore
+	sessionSrc domain.SessionVersionSource
 }
 
 type jwksCache struct {
@@ -39,42 +39,28 @@ func newJWKSCache() *jwksCache {
 	}
 }
 
-func NewJWTService(strategy domain.JWTStrategy, config *config.Config, logger *zap.Logger) domain.JWTService {
-	service := &jwtService{
-		strategy:  strategy,
-		logger:    logger,
-		config:    config,
-		cache:     newJWKSCache(),
-		blacklist: make(map[string]time.Time),
-		stopChan:  make(chan struct{}),
-	}
-
-	// Start cleanup goroutine
-	go service.cleanupBlacklist()
-
-	return service
+func NewJWTService(strategy domain.JWTStrategy, config *config.Config, logger *zap.Logger, sessionSrc domain.SessionVersionSource) (domain.JWTService, error) {
+	revocation := NewMemoryTokenRevocationStore(logger)
+	return NewJWTServiceWithRevocationAndSession(strategy, config, logger, revocation, sessionSrc), nil
 }
 
-// cleanupBlacklist periodically removes expired tokens from the blacklist
-func (j *jwtService) cleanupBlacklist() {
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
+// NewJWTServiceWithRevocation wires a custom revocation backend (tests may inject a mock; production uses memory via NewJWTService).
+func NewJWTServiceWithRevocation(strategy domain.JWTStrategy, config *config.Config, logger *zap.Logger, revocation domain.TokenRevocationStore) domain.JWTService {
+	return NewJWTServiceWithRevocationAndSession(strategy, config, logger, revocation, nil)
+}
 
-	for {
-		select {
-		case <-ticker.C:
-			j.mu.Lock()
-			now := time.Now()
-			for tokenID, expiresAt := range j.blacklist {
-				if now.After(expiresAt) {
-					delete(j.blacklist, tokenID)
-					j.logger.Debug("Removed expired token from blacklist", zap.String("token_id", tokenID))
-				}
-			}
-			j.mu.Unlock()
-		case <-j.stopChan:
-			return
-		}
+// NewJWTServiceWithRevocationAndSession allows tests to supply revocation and optional session-version source.
+func NewJWTServiceWithRevocationAndSession(strategy domain.JWTStrategy, config *config.Config, logger *zap.Logger, revocation domain.TokenRevocationStore, sessionSrc domain.SessionVersionSource) domain.JWTService {
+	if revocation == nil {
+		revocation = NewMemoryTokenRevocationStore(logger)
+	}
+	return &jwtService{
+		strategy:   strategy,
+		logger:     logger,
+		config:     config,
+		cache:      newJWKSCache(),
+		revocation: revocation,
+		sessionSrc: sessionSrc,
 	}
 }
 
@@ -114,10 +100,43 @@ func (j *jwtService) ValidateToken(tokenString string) (*domain.Claims, error) {
 		return nil, domain.ErrInvalidClaims
 	}
 
-	// Check blacklist
-	if j.IsTokenBlacklisted(claims.ID) {
+	revoked, err := j.revocation.IsRevoked(context.Background(), claims.ID)
+	if err != nil {
+		j.logger.Error("Failed to check token revocation",
+			zap.Error(err),
+			zap.String("token_id", claims.ID))
+		return nil, domain.ErrInternal
+	}
+	if revoked {
 		j.logger.Warn("Token is blacklisted", zap.String("token_id", claims.ID))
 		return nil, domain.ErrTokenBlacklisted
+	}
+
+	if j.sessionSrc != nil {
+		userID, err := ulid.Parse(claims.Subject)
+		if err != nil {
+			j.logger.Error("Invalid subject for session version", zap.String("subject", claims.Subject))
+			return nil, domain.ErrInvalidClaims
+		}
+		current, err := j.sessionSrc.GetSessionVersion(context.Background(), userID)
+		if err != nil {
+			j.logger.Error("Session version lookup failed", zap.Error(err))
+			return nil, domain.ErrInternal
+		}
+		if current < 1 {
+			current = 1
+		}
+		tokSV := claims.SessionVersion
+		if tokSV < 1 {
+			tokSV = 0
+		}
+		if tokSV < current {
+			j.logger.Warn("Token session version stale",
+				zap.String("token_id", claims.ID),
+				zap.Int64("token_sv", tokSV),
+				zap.Int64("current_sv", current))
+			return nil, domain.ErrSessionRevoked
+		}
 	}
 
 	return claims, nil
@@ -176,13 +195,19 @@ func (j *jwtService) GenerateTokenPair(ctx context.Context, user *domain.User) (
 		j.logger.Warn("Invalid extra claims format", zap.Error(err))
 	}
 
+	sv := user.SessionVersion
+	if sv < 1 {
+		sv = 1
+	}
+
 	// Generate access token
 	accessTokenID := ulid.Make().String()
 	accessClaims := domain.Claims{
-		Roles:    user.Roles,
-		Name:     user.Name,
-		UserType: user.UserType,
-		Channels: user.Channels,
+		Roles:          user.Roles,
+		Name:           user.Name,
+		UserType:       user.UserType,
+		Channels:       user.Channels,
+		SessionVersion: sv,
 		RegisteredClaims: &jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.config.JWTAccessDuration)),
@@ -204,10 +229,11 @@ func (j *jwtService) GenerateTokenPair(ctx context.Context, user *domain.User) (
 	// Generate refresh token
 	refreshTokenID := ulid.Make().String()
 	refreshClaims := domain.Claims{
-		Roles:    user.Roles,
-		Name:     user.Name,
-		UserType: user.UserType,
-		Channels: user.Channels,
+		Roles:          user.Roles,
+		Name:           user.Name,
+		UserType:       user.UserType,
+		Channels:       user.Channels,
+		SessionVersion: sv,
 		RegisteredClaims: &jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.config.JWTRefreshDuration)),
@@ -269,51 +295,17 @@ func (j *jwtService) RotateKeys() error {
 
 // BlacklistToken adds a token to the blacklist
 func (j *jwtService) BlacklistToken(tokenID string, expiresAt time.Time) error {
-	if tokenID == "" {
-		return domain.ErrInvalidToken
-	}
-
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
-	// If token is already expired, don't add to blacklist
-	if time.Now().After(expiresAt) {
-		j.logger.Debug("Token already expired, not adding to blacklist",
-			zap.String("token_id", tokenID),
-			zap.Time("expires_at", expiresAt))
-		return nil
-	}
-
-	j.blacklist[tokenID] = expiresAt
-	j.logger.Debug("Added token to blacklist",
-		zap.String("token_id", tokenID),
-		zap.Time("expires_at", expiresAt))
-	return nil
+	return j.revocation.Revoke(context.Background(), tokenID, expiresAt)
 }
 
 // IsTokenBlacklisted checks if a token is blacklisted
 func (j *jwtService) IsTokenBlacklisted(tokenID string) bool {
-	if tokenID == "" {
+	revoked, err := j.revocation.IsRevoked(context.Background(), tokenID)
+	if err != nil {
+		j.logger.Error("Failed to check token revocation", zap.Error(err), zap.String("token_id", tokenID))
 		return false
 	}
-
-	j.mu.RLock()
-	exp, ok := j.blacklist[tokenID]
-	j.mu.RUnlock()
-
-	if !ok {
-		return false
-	}
-
-	if time.Now().After(exp) {
-		j.mu.Lock()
-		delete(j.blacklist, tokenID)
-		j.logger.Debug("Removed expired token from blacklist (during check)", zap.String("token_id", tokenID))
-		j.mu.Unlock()
-		return false
-	}
-
-	return true
+	return revoked
 }
 
 // convertToJWK converts an RSA public key to JWK format
@@ -339,7 +331,9 @@ func convertToJWK(publicKey *rsa.PublicKey, kid string) (map[string]interface{},
 	return jwk, nil
 }
 
-// Close stops the cleanup goroutine
+// Close stops the revocation store cleanup goroutine when the store supports it.
 func (j *jwtService) Close() {
-	close(j.stopChan)
+	if c, ok := j.revocation.(interface{ Close() }); ok {
+		c.Close()
+	}
 }

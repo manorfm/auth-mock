@@ -109,5 +109,10 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID ulid.ULID, h
 		return domain.ErrUserNotFound
 	}
 	user.Password = hashedPassword
+	if user.SessionVersion < 1 {
+		user.SessionVersion = 1
+	}
+	user.SessionVersion++
+	user.UpdatedAt = time.Now()
 	return nil
 }

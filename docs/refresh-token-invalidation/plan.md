@@ -48,19 +48,11 @@
 
 ---
 
-### Fase C — Blacklist distribuída / revogação global (médio-longo prazo)
+### Fase C — Contrato de blacklist (`jti`) neste mock
 
-**Quando:** antes ou junto com segunda réplica stateful do user-manager para auth.
+**Escopo deste repositório:** apenas **`MemoryTokenRevocationStore`** por trás de `TokenRevocationStore` — sem Redis nem outro backend externo.
 
-**Opções:**
-
-1. **Redis (SET com TTL = tempo até exp do token)** chave `blacklist:{jti}` — verificação O(1), TTL automático.
-2. **`session_version` no `users`** (inteiro incrementado em troca de senha/admin) embedded nas claims do JWT — revoga **todos** tokens antigos sem listar JTIs (exige novo login após bump).
-3. **Tabela `revoked_tokens`** — auditável; mais carga no Postgres; índice por `jti` + TTL/job de limpeza.
-
-**Recomendação:** Redis para blacklist de **jti** (Fase A/B continuam iguais, só muda a implementação por trás de `JWTService` ou adapter `TokenRevocationStore`).
-
-**Contrato interno sugerido:**
+**Contrato (implementado):**
 
 ```text
 type TokenRevocationStore interface {
@@ -69,7 +61,7 @@ type TokenRevocationStore interface {
 }
 ```
 
-Implementação default in-memory; swap Redis em produção multi-réplica.
+Para um **produto** com várias réplicas e revogação de refresh compartilhada, a equipe pode reintroduzir um adapter (ex. Redis) **fora** deste mock; aqui a decisão é manter tudo em processo.
 
 ---
 
@@ -78,7 +70,7 @@ Implementação default in-memory; swap Redis em produção multi-réplica.
 - Disparar `session_version++` em: reset de senha concluído, alteração de senha, ação admin “encerrar sessões”.
 - `GenerateTokenPair` / `ValidateToken`: incluir claim `sv` e rejeitar se `sv` do token < `sv` do usuário (ler do banco ou cache).
 
-Depende de migração e modelo de dados; encaixar após Fase C se o produto exigir.
+Implementado neste repo (repositório em memória + campo `SessionVersion` no `User`).
 
 ## Dependências e riscos
 
@@ -90,10 +82,29 @@ Depende de migração e modelo de dados; encaixar após Fase C se o produto exig
 
 1. Fase A (+ testes + doc).
 2. Fase B.
-3. Fase C quando houver mais de uma instância ou requisito explícito de revogação global.
-4. Fase D sob demanda.
+3. Fase C (contrato + memória) concluída no mock; evolução distribuída não faz parte deste repo.
+4. Fase D (`session_version`) implementada.
 
 ## Referência cruzada
 
 - Especificação detalhada: [spec.md](./spec.md)
 - Tarefas rastreáveis: [tasks.md](./tasks.md)
+- ADR armazenamento de revogação (multi-réplica): [adr-revocation-store.md](./adr-revocation-store.md)
+
+## Status da implementação (onda 1)
+
+Concluído neste repositório:
+
+- Rotação + blacklist em `RefreshWithRefreshToken` e em `OIDCService.RefreshToken`.
+- `POST /auth/logout` com invalidação server-side e limpeza de cookie.
+- Handler `/oauth2/token` mapeia reuso de refresh para **`U0026`**.
+- Blacklist de `jti` via `MemoryTokenRevocationStore` apenas; **`session_version` / claim `sv`** para revogar sessões após troca de senha.
+- Documentação: `README.md`, `CHANGELOG.md`, esta pasta SDD.
+
+### Revisão de segurança (logout / refresh com cookie)
+
+- **HttpOnly** e **SameSite=Lax** no cookie de refresh (ver `internal/interfaces/http/handlers/auth_http.go`). **POST** para refresh e logout reduz risco de vazamento via GET.
+- **CSRF:** com `SameSite=Lax`, requisições cross-site “simples” não enviam o cookie em todos os cenários; ainda assim, aplicações que hospedam o front em outro site que dependa de cookie automático para esses POSTs devem avaliar token anti-CSRF ou `SameSite=Strict` conforme o modelo de deploy.
+- **CORS:** restrinja origens no gateway ou no serviço conforme o produto; refresh/logout não devem ser abertos a `*` se o cliente usa credenciais (cookies).
+
+Blacklist de `jti` é **só in-process**; `session_version` cobre invalidação global de sessões após troca de senha.

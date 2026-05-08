@@ -13,6 +13,7 @@ import (
 
 	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/manorfm/auth-mock/internal/infrastructure/config"
+	"github.com/manorfm/auth-mock/internal/infrastructure/repository"
 )
 
 func getJWTServiceWithDuration(t *testing.T, accessDuration, refreshDuration time.Duration) domain.JWTService {
@@ -27,7 +28,8 @@ func getJWTServiceWithDuration(t *testing.T, accessDuration, refreshDuration tim
 
 	strategy, err := NewLocalStrategy(cfg, logger)
 	require.NoError(t, err)
-	service := NewJWTService(strategy, cfg, logger)
+	service, err := NewJWTService(strategy, cfg, logger, nil)
+	require.NoError(t, err)
 	require.NotNil(t, service)
 
 	return service
@@ -539,4 +541,42 @@ func TestJWTService_UserClaims(t *testing.T) {
 		assert.Equal(t, user.Roles, claims.Roles)
 		assert.Equal(t, userName, claims.Name)
 	})
+}
+
+func TestJWTService_SessionVersionRevokedAfterPasswordUpdate(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := &config.Config{
+		JWTAccessDuration:  15 * time.Minute,
+		JWTRefreshDuration: 24 * time.Hour,
+		RSAKeySize:         2048,
+	}
+	strategy, err := NewLocalStrategy(cfg, logger)
+	require.NoError(t, err)
+
+	repo := repository.NewUserRepository(logger)
+	rev := NewMemoryTokenRevocationStore(logger)
+	t.Cleanup(rev.Close)
+
+	svc := NewJWTServiceWithRevocationAndSession(strategy, cfg, logger, rev, NewUserRepositorySessionSource(repo))
+	js, ok := svc.(*jwtService)
+	require.True(t, ok)
+	t.Cleanup(js.Close)
+
+	user, err := domain.NewUser("U", "u@example.com", "secret123", "555")
+	require.NoError(t, err)
+	require.NoError(t, repo.Create(context.Background(), user))
+
+	pair, err := svc.GenerateTokenPair(context.Background(), user)
+	require.NoError(t, err)
+	_, err = svc.ValidateToken(pair.AccessToken)
+	require.NoError(t, err)
+	_, err = svc.ValidateToken(pair.RefreshToken)
+	require.NoError(t, err)
+
+	require.NoError(t, repo.UpdatePassword(context.Background(), user.ID, "newhash"))
+
+	_, err = svc.ValidateToken(pair.AccessToken)
+	require.ErrorIs(t, err, domain.ErrSessionRevoked)
+	_, err = svc.ValidateToken(pair.RefreshToken)
+	require.ErrorIs(t, err, domain.ErrSessionRevoked)
 }

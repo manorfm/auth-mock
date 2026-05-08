@@ -36,12 +36,16 @@ func NewRouter(
 		logger.Error("Failed to create JWT strategy", zap.Error(err))
 		panic(err)
 	}
-	jwtService := jwt.NewJWTService(strategy, cfg, logger)
+
+	userRepo := repository.NewUserRepository(logger)
+	jwtService, err := jwt.NewJWTService(strategy, cfg, logger, jwt.NewUserRepositorySessionSource(userRepo))
+	if err != nil {
+		logger.Error("Failed to create JWT service", zap.Error(err))
+		panic(err)
+	}
 	authMiddleware := auth.NewAuthMiddleware(jwtService, logger)
 	rateLimiter := ratelimit.NewRateLimiter(100, 200, 3*time.Minute)
 	strictRateLimiter := ratelimit.NewRateLimiter(20, 40, 3*time.Minute)
-
-	userRepo := repository.NewUserRepository(logger)
 	oauthRepo := repository.NewOAuth2Repository(logger)
 	verificationRepo := repository.NewVerificationCodeRepository(logger)
 	totpRepo := repository.NewTOTPRepository(logger)

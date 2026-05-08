@@ -9,33 +9,38 @@ O `user-manager-service` emite pares access + refresh (JWT). O access token tem 
 - política de **rotação** que impeça reuso de um refresh já consumido;
 - consistência entre **múltiplas instâncias** do mesmo serviço (escala horizontal).
 
-## Estado atual (linha de base do repositório)
+## Estado atual (implementado neste repositório)
 
 ### O que já existe
 
-1. **`POST /auth/refresh`** (`AuthService.RefreshToken`):
-   - Valida o refresh via `JWTService.ValidateToken` (inclui checagem de **blacklist** por `jti`/ID do token).
+1. **`POST {API_BASE_PATH}/auth/refresh`** (`AuthService.RefreshWithRefreshToken` + `RefreshTokenHandler`):
+   - Valida o refresh via `JWTService.ValidateToken` (inclui checagem de **blacklist** por `jti`).
    - **Adiciona o refresh apresentado à blacklist** (rotação: um refresh só serve para **uma** troca bem-sucedida).
-   - Gera novo par de tokens.
+   - Gera novo par de tokens e regrava o cookie de refresh quando aplicável.
 
-2. **`JWTService`**: implementação em memória de blacklist (`tokenID -> expiração`), com limpeza periódica em goroutine.
+2. **`POST {API_BASE_PATH}/oauth2/token`** com `grant_type=refresh_token` (`OIDCService.RefreshToken`):
+   - Mesma política de rotação + blacklist que o item acima.
+   - Reuso do mesmo refresh após troca bem-sucedida: resposta **`U0026` Token blacklisted** (HTTP `400`), alinhada ao handler.
 
-3. **Resposta de erro**: `U0026` Token blacklisted quando um JWT (access ou refresh) validado está na blacklist.
+3. **`POST {API_BASE_PATH}/auth/logout`** (`AuthService.LogoutWithRefreshToken`):
+   - Lê refresh do cookie ou do body JSON (`refresh_token`), valida, blacklista o `jti`, limpa cookie, **`204 No Content`**.
 
-### Lacunas identificadas
+4. **`JWTService`**: revogação via `TokenRevocationStore` — **somente em memória** neste repositório (TTL até `exp` do token na store).
 
-| Lacuna | Impacto |
-|--------|--------|
-| **OIDC `OIDCService.RefreshToken`** (`grant_type=refresh_token` em `/oauth2/token`) **não** chama `BlacklistToken` após validação | Permite **reuso** do mesmo refresh nesse fluxo; comportamento diferente de `/auth/refresh`. |
-| **Blacklist só em memória** | Em **mais de uma réplica**, uma instância pode aceitar um refresh que outra já invalidou; revogação não é global. |
-| **Sem endpoint de logout servidor-side** que invalide o refresh atual | Limpar cookie no browser ajuda, mas **não** revoga o JWT refresh se copiado; cliente precisa de invalidação explícita quando o produto exigir. |
-| **Sem “revogar todas as sessões”** (opcional) | Troca de senha / admin não força novo login em todos os dispositivos por um mecanismo central de sessão. |
+5. **Código de erro**: `U0026` quando o JWT validado está na blacklist (access ou refresh).
+
+### Lacunas / próximos passos
+
+| Item | Impacto |
+|------|--------|
+| **Multi-réplica** | Blacklist de `jti` é **por processo**. Escalar horizontalmente sem sticky sessions implica aceitar que um refresh invalidado em uma instância pode ainda ser aceito em outra até expirar — **fora do escopo** deste mock (sem backend compartilhado). |
+| **Observabilidade** | Métrica dedicada `refresh_rejected_total{reason=blacklist}` ainda não implementada (RF3). |
 
 ## Objetivos do trabalho
 
 1. **Comportamento consistente**: qualquer caminho que troque refresh (BFF cookie ou OIDC) deve seguir a **mesma política de rotação + blacklist** (ou política documentada se OIDC for tratado diferente por decisão consciente).
 2. **Invalidação explícita** (mínimo viável): permitir que o cliente solicite **logout** que marque o refresh atual como inválido no servidor (na medida do armazenamento escolhido).
-3. **Preparar evolução multi-instância**: especificar armazenamento **externo** da blacklist ou equivalente (`session_version`, Redis, etc.) antes de escalar horizontalmente com garantias fortes.
+3. **Revogar todas as sessões**: `session_version` + claim `sv` em JWT; bump na troca de senha invalida tokens antigos (`U0069`).
 
 ## Requisitos funcionais
 
@@ -54,15 +59,15 @@ O `user-manager-service` emite pares access + refresh (JWT). O access token tem 
 - Reuso de refresh já invalidado: resposta coerente (`U0026` ou código dedicado, documentado).
 - Logs/métricas: contagem de refresh recusado por blacklist; sem vazar PII no log.
 
-### RF4 — (Futuro) Revogação em larga escala
+### RF4 — Revogação em larga escala (sessão)
 
-- Especificar (sem obrigar na primeira entrega) **versionamento de sessão** por usuário ou **família de refresh tokens** para invalidar todas as sessões num evento (troca de senha, admin).
+- **Implementado:** `session_version` no usuário, claim **`sv`** nos JWTs, bump na troca de senha → tokens anteriores falham com **`U0069`**.
 
 ## Requisitos não funcionais
 
 - **RNF1**: Latência de verificação de blacklist compatível com o path de refresh (p95 alvo a definir no plano de carga).
 - **RNF2**: TTL da entrada na blacklist alinhado ao `exp` do token (não guardar indefinidamente).
-- **RNF3**: Solução distribuída deve evitar estado divergente prolongado entre réplicas (eventual consistency aceitável com limite documentado).
+- **RNF3**: Este mock **não** oferece blacklist compartilhada entre processos; multi-réplica com garantia forte de revogação de `jti` ficaria para outro serviço ou camada.
 
 ## Fora de escopo (primeira onda)
 
@@ -73,11 +78,14 @@ O `user-manager-service` emite pares access + refresh (JWT). O access token tem 
 
 1. Dois refresh seguidos com o **mesmo** token via fluxo OIDC falham na segunda tentativa com erro de token inválido/blacklisted (paridade com `/auth/refresh`).
 2. `POST` de logout (rota acordada) remove cookie e impede reuso imediato do mesmo refresh **na mesma instância**.
-3. Documentação atualizada: README + esta pasta SDD referenciando comportamento e limitações multi-instância enquanto blacklist for só in-process.
+3. Documentação atualizada: README + esta pasta SDD referenciando comportamento e que a blacklist é **só in-process** neste serviço.
 
 ## Referências no código
 
-- `internal/application/auth_service.go` — `RefreshToken` (rotação + blacklist).
-- `internal/application/oidc_service.go` — `RefreshToken` (hoje sem blacklist).
-- `internal/infrastructure/jwt/jwt_service.go` — `ValidateToken`, `BlacklistToken`, blacklist em memória.
-- `internal/interfaces/http/handlers/handler_auth.go` — `RefreshTokenHandler` (cookie).
+- `internal/application/auth_service.go` — `RefreshWithRefreshToken`, `LogoutWithRefreshToken` (rotação + blacklist).
+- `internal/application/oidc_service.go` — `RefreshToken` (rotação + blacklist).
+- `internal/domain/jwt.go` — `TokenRevocationStore` (contrato de revogação).
+- `internal/infrastructure/jwt/memory_revocation_store.go` — implementação em memória (única neste repo).
+- `internal/infrastructure/jwt/jwt_service.go` — `ValidateToken`, `BlacklistToken`; delega revogação ao `TokenRevocationStore`; `NewJWTService` instancia a store em memória.
+- `internal/interfaces/http/handlers/handler_auth.go` — `RefreshTokenHandler`, `LogoutHandler`.
+- `internal/interfaces/http/handlers/handler_oidc.go` — `TokenHandler` (`grant_type=refresh_token`, erro `U0026` quando aplicável).

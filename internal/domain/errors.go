@@ -193,6 +193,9 @@ var (
 	ErrAuthRoleRequiredMinimum = NewBusinessError("U0066", "Cannot remove required base role")
 	ErrAuthAdminRequired       = NewBusinessError("U0067", "Administrator privileges required")
 	ErrAuthUserNotStandalone   = NewBusinessError("U0068", "Operation allowed only for standalone users")
+
+	// ErrSessionRevoked is returned when the JWT session version is older than the user's current version.
+	ErrSessionRevoked = NewBusinessError("U0069", "Session revoked")
 )
 
 func (e *BusinessError) GetCode() string {

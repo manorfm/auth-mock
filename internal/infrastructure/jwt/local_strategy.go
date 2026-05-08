@@ -82,6 +82,11 @@ func (l *localStrategy) Sign(claims *domain.Claims) (string, error) {
 	if len(claims.Channels) > 0 {
 		mapClaims["channels"] = claims.Channels
 	}
+	sv := claims.SessionVersion
+	if sv < 1 {
+		sv = 1
+	}
+	mapClaims["sv"] = sv
 
 	// Adiciona os claims extras (dinâmicos)
 	for k, v := range claims.Extra {

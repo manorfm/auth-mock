@@ -217,7 +217,11 @@ func getJWTService() domain.JWTService {
 	if err != nil {
 		panic(err)
 	}
-	return jwt.NewJWTService(strategy, cfg, logger)
+	svc, err := jwt.NewJWTService(strategy, cfg, logger, nil)
+	if err != nil {
+		panic(err)
+	}
+	return svc
 }
 
 func TestHandleOpenIDConfiguration(t *testing.T) {
@@ -987,6 +991,24 @@ func TestOIDCHandler_TokenHandler(t *testing.T) {
 				RefreshToken: "new_refresh_token_123",
 			},
 		},
+		{
+			name: "refresh token reuse returns token blacklisted",
+			requestBody: TokenRequest{
+				GrantType:    "refresh_token",
+				RefreshToken: "refresh_token_reused",
+				ClientID:     "client123",
+				ClientSecret: "secret123",
+			},
+			mockSetup: func() {
+				mockService.On("RefreshToken", mock.Anything, "refresh_token_reused").
+					Return(nil, domain.ErrTokenBlacklisted)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody: errors.ErrorResponse{
+				Code:    domain.ErrTokenBlacklisted.GetCode(),
+				Message: domain.ErrTokenBlacklisted.GetMessage(),
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1005,11 +1027,18 @@ func TestOIDCHandler_TokenHandler(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedBody != nil {
-				var response domain.TokenPair
-				err := json.NewDecoder(w.Body).Decode(&response)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedBody.(*domain.TokenPair).AccessToken, response.AccessToken)
-				assert.Equal(t, tt.expectedBody.(*domain.TokenPair).RefreshToken, response.RefreshToken)
+				if expectedToken, ok := tt.expectedBody.(*domain.TokenPair); ok {
+					var response domain.TokenPair
+					err := json.NewDecoder(w.Body).Decode(&response)
+					assert.NoError(t, err)
+					assert.Equal(t, expectedToken.AccessToken, response.AccessToken)
+					assert.Equal(t, expectedToken.RefreshToken, response.RefreshToken)
+				} else {
+					var response errors.ErrorResponse
+					err := json.NewDecoder(w.Body).Decode(&response)
+					assert.NoError(t, err)
+					assert.Equal(t, tt.expectedBody, response)
+				}
 			}
 
 			mockService.AssertExpectations(t)

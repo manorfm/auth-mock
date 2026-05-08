@@ -48,7 +48,8 @@ func TestAccountIntegration(t *testing.T) {
 	// Setup services
 	jwtStrategy, err := jwt.NewLocalStrategy(cfg, logger)
 	require.NoError(t, err)
-	jwtService := jwt.NewJWTService(jwtStrategy, cfg, logger)
+	jwtService, err := jwt.NewJWTService(jwtStrategy, cfg, logger, nil)
+	require.NoError(t, err)
 
 	totpGenerator := totp.NewGenerator(logger)
 	emailTemplate := email.NewEmailTemplate(&cfg.SMTP, logger)

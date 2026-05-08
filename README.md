@@ -180,7 +180,7 @@ http://localhost:8080/swagger/index.html
 
 ### Authentication flow
 
-Detailed design and rollout notes for refresh invalidation live in `docs/refresh-token-invalidation/`.
+Detailed design and rollout notes for refresh invalidation live in `docs/refresh-token-invalidation/`. Breaking changes (including OAuth2 refresh rotation) are listed in `CHANGELOG.md`. This mock keeps **JWT revocation (blacklist) and persistence in-process only** — no Redis or other external store for tokens.
 
 1. **Register** with the endpoint that matches the product:
    - `POST /api/auth/register/client` — consumer app; user type `client`, channel `client_app`, role `user`
@@ -190,11 +190,14 @@ Detailed design and rollout notes for refresh invalidation live in `docs/refresh
 4. **Refresh** with `POST /api/auth/refresh` (cookie or `refresh_token` in JSON body). The presented refresh token is invalidated on success (rotation), and a new refresh cookie is returned.
 5. **Logout** with `POST /api/auth/logout` (cookie or `refresh_token` in JSON body). The current refresh token is invalidated server-side and the refresh cookie is cleared.
 6. If TOTP is enabled, login returns an **MFA ticket** JSON (unchanged shape); then call **`POST /api/auth/verify-mfa`** — on success you get the same cookie + JSON access token pattern as login.
-7. Call protected routes with:
+7. **OAuth2 token endpoint** (`POST /api/oauth2/token` with `grant_type=refresh_token`): uses the same **refresh rotation** as `/api/auth/refresh`. Reusing the same refresh string after a successful exchange returns **`U0026` (Token blacklisted)**.
+8. Call protected routes with:
    ```
    Authorization: Bearer <access_token>
    ```
    Protected routes in this mock expect the **`management_panel`** channel in the JWT (OIDC, TOTP, accounts, user profile, OAuth2 client CRUD).
+
+When a user’s **password is changed** (including password reset), the server increments **`session_version`**. Previously issued access and refresh JWTs carry claim **`sv`**; if it is lower than the current version, validation fails with **`U0069` (Session revoked)** until the user signs in again.
 
 ### Available endpoints
 
@@ -261,6 +264,7 @@ All domain error codes emitted by this service are listed below. **`U0061`–`U0
 | `U0024` | Token subject is required |
 | `U0025` | Invalid claims |
 | `U0026` | Token blacklisted |
+| `U0069` | Session revoked (e.g. password changed; JWT `sv` stale) |
 | `U0029` | Invalid signing method |
 | `U0030` | Invalid signature |
 | `U0031` | Invalid redirect URI |
