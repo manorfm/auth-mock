@@ -188,6 +188,16 @@ func (s *OIDCService) RefreshToken(ctx context.Context, refreshToken string) (*d
 			zap.Error(err))
 		return nil, domain.ErrInvalidCredentials
 	}
+	if claims.RegisteredClaims == nil || claims.ID == "" || claims.ExpiresAt == nil {
+		s.logger.Error("Invalid refresh token claims for rotation")
+		return nil, domain.ErrInvalidCredentials
+	}
+	if err := s.jwtService.BlacklistToken(claims.ID, claims.ExpiresAt.Time); err != nil {
+		s.logger.Error("Failed to blacklist refresh token",
+			zap.String("token_id", claims.ID),
+			zap.Error(err))
+		return nil, domain.ErrInternal
+	}
 
 	// Parse user ID
 	userID, err := ulid.Parse(claims.RegisteredClaims.Subject)

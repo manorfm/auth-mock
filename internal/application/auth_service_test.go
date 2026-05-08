@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/manorfm/auth-mock/internal/infrastructure/config"
 	"github.com/manorfm/auth-mock/internal/infrastructure/password"
@@ -983,4 +984,106 @@ func TestAuthService_Login(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAuthService_RefreshWithRefreshToken_BlacklistsUsedToken(t *testing.T) {
+	repo := new(MockUserRepository)
+	mockJWT := new(mockJWTService)
+	mockEmailSvc := new(mockEmailService)
+	mockTOTPSvc := new(authMockTOTPService)
+	mockMFATicketRepo := new(mockMFATicketRepository)
+	mockAccountSvc := new(mockAccountService)
+	mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
+	cfg := &config.Config{EmailEnabled: false}
+	service := NewAuthService(
+		cfg,
+		repo,
+		mockAccountSvc,
+		nil,
+		mockJWT,
+		mockEmailSvc,
+		mockTOTPSvc,
+		mockMFATicketRepo,
+		zap.NewNop(),
+	)
+
+	userID := ulid.Make()
+	expiresAt := time.Now().Add(1 * time.Hour)
+	refreshClaims := &domain.Claims{
+		RegisteredClaims: &jwt.RegisteredClaims{
+			ID:        "refresh-jti",
+			Subject:   userID.String(),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+		Roles: []string{domain.RoleUser},
+	}
+	user := &domain.User{
+		ID:            userID,
+		Email:         "test@example.com",
+		Password:      "hashed",
+		Roles:         []string{domain.RoleUser},
+		Channels:      []string{domain.ChannelManagementPanel},
+		EmailVerified: true,
+	}
+	pair := &domain.TokenPair{AccessToken: "new-access", RefreshToken: "new-refresh"}
+
+	mockJWT.On("ValidateToken", "old-refresh").Return(refreshClaims, nil).Once()
+	mockJWT.On(
+		"BlacklistToken",
+		"refresh-jti",
+		mock.MatchedBy(func(t time.Time) bool { return t.Equal(expiresAt) || t.Unix() == expiresAt.Unix() }),
+	).Return(nil).Once()
+	repo.On("FindByID", mock.Anything, userID).Return(user, nil).Once()
+	mockJWT.On("GenerateTokenPair", mock.Anything, user).Return(pair, nil).Once()
+
+	got, err := service.RefreshWithRefreshToken(context.Background(), "old-refresh")
+	assert.NoError(t, err)
+	assert.Equal(t, pair, got)
+	mockJWT.AssertExpectations(t)
+	repo.AssertExpectations(t)
+}
+
+func TestAuthService_LogoutWithRefreshToken_BlacklistsToken(t *testing.T) {
+	repo := new(MockUserRepository)
+	mockJWT := new(mockJWTService)
+	mockEmailSvc := new(mockEmailService)
+	mockTOTPSvc := new(authMockTOTPService)
+	mockMFATicketRepo := new(mockMFATicketRepository)
+	mockAccountSvc := new(mockAccountService)
+	mockAccountSvc.On("CreateAccount", mock.Anything, mock.AnythingOfType("ulid.ULID")).Return(&domain.Account{}, nil)
+
+	cfg := &config.Config{EmailEnabled: false}
+	service := NewAuthService(
+		cfg,
+		repo,
+		mockAccountSvc,
+		nil,
+		mockJWT,
+		mockEmailSvc,
+		mockTOTPSvc,
+		mockMFATicketRepo,
+		zap.NewNop(),
+	)
+
+	expiresAt := time.Now().Add(1 * time.Hour)
+	refreshClaims := &domain.Claims{
+		RegisteredClaims: &jwt.RegisteredClaims{
+			ID:        "logout-refresh-jti",
+			Subject:   ulid.Make().String(),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+		Roles: []string{domain.RoleUser},
+	}
+
+	mockJWT.On("ValidateToken", "logout-refresh").Return(refreshClaims, nil).Once()
+	mockJWT.On(
+		"BlacklistToken",
+		"logout-refresh-jti",
+		mock.MatchedBy(func(t time.Time) bool { return t.Equal(expiresAt) || t.Unix() == expiresAt.Unix() }),
+	).Return(nil).Once()
+
+	err := service.LogoutWithRefreshToken(context.Background(), "logout-refresh")
+	assert.NoError(t, err)
+	mockJWT.AssertExpectations(t)
 }

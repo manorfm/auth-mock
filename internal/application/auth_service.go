@@ -661,6 +661,13 @@ func (s *AuthService) RefreshWithRefreshToken(ctx context.Context, refreshToken 
 	if err != nil {
 		return nil, domain.ErrAuthInvalidCredentials
 	}
+	if claims.RegisteredClaims == nil || claims.ID == "" || claims.ExpiresAt == nil {
+		return nil, domain.ErrAuthInvalidCredentials
+	}
+	if err := s.jwtService.BlacklistToken(claims.ID, claims.ExpiresAt.Time); err != nil {
+		s.logger.Error("Failed to blacklist refresh token during rotation", zap.Error(err))
+		return nil, domain.ErrInternal
+	}
 	userID, err := ulid.Parse(claims.Subject)
 	if err != nil {
 		return nil, domain.ErrInvalidUserID
@@ -670,6 +677,21 @@ func (s *AuthService) RefreshWithRefreshToken(ctx context.Context, refreshToken 
 		return nil, domain.ErrAuthInvalidCredentials
 	}
 	return s.jwtService.GenerateTokenPair(ctx, user)
+}
+
+func (s *AuthService) LogoutWithRefreshToken(ctx context.Context, refreshToken string) error {
+	claims, err := s.jwtService.ValidateToken(refreshToken)
+	if err != nil {
+		return domain.ErrAuthInvalidCredentials
+	}
+	if claims.RegisteredClaims == nil || claims.ID == "" || claims.ExpiresAt == nil {
+		return domain.ErrAuthInvalidCredentials
+	}
+	if err := s.jwtService.BlacklistToken(claims.ID, claims.ExpiresAt.Time); err != nil {
+		s.logger.Error("Failed to blacklist refresh token on logout", zap.Error(err))
+		return domain.ErrInternal
+	}
+	return nil
 }
 
 func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string) error {

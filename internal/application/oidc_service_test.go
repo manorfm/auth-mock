@@ -176,7 +176,9 @@ type mockJWTRefresh struct{}
 func (m *mockJWTRefresh) ValidateToken(token string) (*domain.Claims, error) {
 	return &domain.Claims{
 		RegisteredClaims: &jwtv5.RegisteredClaims{
-			Subject: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			ID:        "refresh-jti",
+			Subject:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			ExpiresAt: jwtv5.NewNumericDate(time.Now().Add(1 * time.Hour)),
 		},
 		Roles: []string{"user"},
 	}, nil
@@ -242,6 +244,44 @@ func (m *mockJWTError) RotateKeys() error {
 	return nil
 }
 
+type mockJWTRotation struct {
+	blacklisted map[string]time.Time
+}
+
+func (m *mockJWTRotation) ValidateToken(token string) (*domain.Claims, error) {
+	if _, ok := m.blacklisted["refresh-jti"]; ok {
+		return nil, domain.ErrTokenBlacklisted
+	}
+	return &domain.Claims{
+		RegisteredClaims: &jwtv5.RegisteredClaims{
+			ID:        "refresh-jti",
+			Subject:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			ExpiresAt: jwtv5.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+		Roles: []string{"user"},
+	}, nil
+}
+
+func (m *mockJWTRotation) GetPublicKey() *rsa.PublicKey { return nil }
+func (m *mockJWTRotation) GetJWKS(ctx context.Context) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *mockJWTRotation) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.TokenPair, error) {
+	return &domain.TokenPair{AccessToken: "mock_access_token", RefreshToken: "mock_refresh_token"}, nil
+}
+func (m *mockJWTRotation) BlacklistToken(tokenID string, expiresAt time.Time) error {
+	m.blacklisted[tokenID] = expiresAt
+	return nil
+}
+func (m *mockJWTRotation) IsTokenBlacklisted(tokenID string) bool {
+	_, ok := m.blacklisted[tokenID]
+	return ok
+}
+func (m *mockJWTRotation) RotateKeys() error { return nil }
+func (m *mockJWTRotation) GetLastRotation() time.Time {
+	return time.Now()
+}
+
 // Mock TOTPService for testing
 type mockTOTPService struct {
 	mock.Mock
@@ -278,7 +318,9 @@ type mockJWTInvalidUserID struct{}
 func (m *mockJWTInvalidUserID) ValidateToken(token string) (*domain.Claims, error) {
 	return &domain.Claims{
 		RegisteredClaims: &jwtv5.RegisteredClaims{
-			Subject: "invalid_user_id",
+			ID:        "refresh-jti",
+			Subject:   "invalid_user_id",
+			ExpiresAt: jwtv5.NewNumericDate(time.Now().Add(1 * time.Hour)),
 		},
 		Roles: []string{"user"},
 	}, nil
@@ -314,7 +356,9 @@ type mockJWTTokenGenError struct{}
 func (m *mockJWTTokenGenError) ValidateToken(token string) (*domain.Claims, error) {
 	return &domain.Claims{
 		RegisteredClaims: &jwtv5.RegisteredClaims{
-			Subject: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			ID:        "refresh-jti",
+			Subject:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			ExpiresAt: jwtv5.NewNumericDate(time.Now().Add(1 * time.Hour)),
 		},
 		Roles: []string{"user"},
 	}, nil
@@ -824,4 +868,32 @@ func TestOIDCService_RefreshToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOIDCService_RefreshToken_RotatesAndRejectsReuse(t *testing.T) {
+	logger := zap.NewNop()
+	mockUserRepo := new(mockUserRepository)
+	mockOAuth2Service := new(mockOAuth2Service)
+	mockTOTPService := new(mockTOTPService)
+	jwtService := &mockJWTRotation{blacklisted: make(map[string]time.Time)}
+
+	userID := ulid.MustParse("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	mockUserRepo.On("FindByID", mock.Anything, userID).Return(&domain.User{
+		ID:    userID,
+		Name:  "Test User",
+		Email: "test@example.com",
+		Roles: []string{"user"},
+	}, nil).Once()
+
+	cfg, err := config.LoadConfig(logger)
+	assert.NoError(t, err)
+	service := NewOIDCService(mockOAuth2Service, jwtService, mockUserRepo, mockTOTPService, cfg, logger)
+
+	first, err := service.RefreshToken(context.Background(), "same-refresh")
+	assert.NoError(t, err)
+	assert.NotNil(t, first)
+
+	second, err := service.RefreshToken(context.Background(), "same-refresh")
+	assert.ErrorIs(t, err, domain.ErrInvalidCredentials)
+	assert.Nil(t, second)
 }

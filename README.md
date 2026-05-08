@@ -180,13 +180,17 @@ http://localhost:8080/swagger/index.html
 
 ### Authentication flow
 
+Detailed design and rollout notes for refresh invalidation live in `docs/refresh-token-invalidation/`.
+
 1. **Register** with the endpoint that matches the product:
    - `POST /api/auth/register/client` — consumer app; user type `client`, channel `client_app`, role `user`
    - `POST /api/auth/register/management` — management panel; user type `management`, channel `management_panel`, role `user`
 2. If `EMAIL_ENABLED=true`, complete **`POST /api/auth/verify-email`** before login; registration responses use `status: "email_verify"` until verified.
 3. **Login** with `POST /api/auth/login` using `email` + `password`; `channel` is optional (`client_app` or `management_panel`) and defaults to `management_panel` when omitted. The JSON response contains **`access_token` only**; the **`refresh_token`** is set in a cookie (see env `REFRESH_COOKIE_SECURE`).
-4. If TOTP is enabled, login returns an **MFA ticket** JSON (unchanged shape); then call **`POST /api/auth/verify-mfa`** — on success you get the same cookie + JSON access token pattern as login.
-5. Call protected routes with:
+4. **Refresh** with `POST /api/auth/refresh` (cookie or `refresh_token` in JSON body). The presented refresh token is invalidated on success (rotation), and a new refresh cookie is returned.
+5. **Logout** with `POST /api/auth/logout` (cookie or `refresh_token` in JSON body). The current refresh token is invalidated server-side and the refresh cookie is cleared.
+6. If TOTP is enabled, login returns an **MFA ticket** JSON (unchanged shape); then call **`POST /api/auth/verify-mfa`** — on success you get the same cookie + JSON access token pattern as login.
+7. Call protected routes with:
    ```
    Authorization: Bearer <access_token>
    ```
@@ -198,6 +202,8 @@ http://localhost:8080/swagger/index.html
 - `POST /api/auth/register/client` — public signup (client app)
 - `POST /api/auth/register/management` — public signup (management; stricter rate limit)
 - `POST /api/auth/login` — email + password (+ optional `channel`, default `management_panel`) (stricter rate limit)
+- `POST /api/auth/refresh` — rotate refresh token (cookie or body `refresh_token`)
+- `POST /api/auth/logout` — invalidate current refresh token and clear cookie
 - `POST /api/auth/verify-mfa` — exchange MFA ticket for tokens (stricter rate limit)
 - `POST /api/auth/verify-email` — verify email code
 - `POST /api/auth/request-password-reset` — request reset code

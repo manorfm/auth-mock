@@ -123,6 +123,7 @@ func NewRouter(
 			r.Post("/auth/register/management", authHandler.RegisterManagementHandler)
 			r.Post("/auth/login", authHandler.LoginHandler)
 			r.Post("/auth/refresh", authHandler.RefreshTokenHandler)
+			r.Post("/auth/logout", authHandler.LogoutHandler)
 			r.Post("/auth/verify-mfa", authHandler.VerifyMFAHandler)
 			r.Post("/auth/resend-verification", authHandler.ResendVerificationHandler)
 		})

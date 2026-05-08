@@ -294,9 +294,7 @@ type refreshTokenBody struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// RefreshTokenHandler exchanges a refresh token (cookie or JSON body) for a new access token; refresh is re-set as HttpOnly cookie.
-func (h *HandlerAuth) RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+func readRefreshTokenFromRequest(r *http.Request) (string, error) {
 	var refresh string
 	if c, err := r.Cookie(refreshTokenCookieName); err == nil && c.Value != "" {
 		refresh = c.Value
@@ -304,10 +302,20 @@ func (h *HandlerAuth) RefreshTokenHandler(w http.ResponseWriter, r *http.Request
 	if refresh == "" {
 		var body refreshTokenBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			errors.RespondWithError(w, domain.ErrInvalidRequestBody)
-			return
+			return "", err
 		}
 		refresh = body.RefreshToken
+	}
+	return refresh, nil
+}
+
+// RefreshTokenHandler exchanges a refresh token (cookie or JSON body) for a new access token; refresh is re-set as HttpOnly cookie.
+func (h *HandlerAuth) RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	refresh, err := readRefreshTokenFromRequest(r)
+	if err != nil {
+		errors.RespondWithError(w, domain.ErrInvalidRequestBody)
+		return
 	}
 	if refresh == "" {
 		errors.RespondWithError(w, domain.ErrInvalidRequestBody)
@@ -329,6 +337,29 @@ func (h *HandlerAuth) RefreshTokenHandler(w http.ResponseWriter, r *http.Request
 		h.logger.Error("failed to encode refresh response", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrInternal)
 	}
+}
+
+func (h *HandlerAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	refresh, err := readRefreshTokenFromRequest(r)
+	if err != nil {
+		errors.RespondWithError(w, domain.ErrInvalidRequestBody)
+		return
+	}
+	if refresh == "" {
+		errors.RespondWithError(w, domain.ErrInvalidRequestBody)
+		return
+	}
+	if err := h.authService.LogoutWithRefreshToken(r.Context(), refresh); err != nil {
+		if de, ok := err.(domain.Error); ok {
+			errors.RespondWithError(w, de)
+			return
+		}
+		errors.RespondWithError(w, domain.ErrAuthInvalidCredentials)
+		return
+	}
+	clearRefreshTokenCookie(w, h.cfg)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type resendVerificationRequest struct {

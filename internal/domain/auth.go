@@ -51,6 +51,8 @@ type AuthService interface {
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
 	// RefreshWithRefreshToken issues a new access/refresh pair from a valid refresh JWT.
 	RefreshWithRefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error)
+	// LogoutWithRefreshToken invalidates the provided refresh JWT.
+	LogoutWithRefreshToken(ctx context.Context, refreshToken string) error
 	// ResendVerificationEmail generates a new email verification code when verification is enabled.
 	ResendVerificationEmail(ctx context.Context, email string) error
 }

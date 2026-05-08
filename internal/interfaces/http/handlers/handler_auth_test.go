@@ -133,6 +133,11 @@ func (m *mockAuthService) ResendVerificationEmail(ctx context.Context, email str
 	return args.Error(0)
 }
 
+func (m *mockAuthService) LogoutWithRefreshToken(ctx context.Context, refreshToken string) error {
+	args := m.Called(ctx, refreshToken)
+	return args.Error(0)
+}
+
 func TestAuthHandler_Register(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -427,4 +432,48 @@ func TestAuthHandler_Login(t *testing.T) {
 			mockService.AssertExpectations(t)
 		})
 	}
+}
+
+func TestAuthHandler_Logout(t *testing.T) {
+	logger := zap.NewNop()
+	mockService := new(mockAuthService)
+	testCfg := &config.Config{JWTRefreshDuration: 24 * time.Hour}
+	handler := NewAuthHandler(mockService, testCfg, logger)
+
+	t.Run("logout with refresh cookie", func(t *testing.T) {
+		mockService.On("LogoutWithRefreshToken", mock.Anything, "refresh_token").Return(nil).Once()
+
+		req := httptest.NewRequest(http.MethodPost, "/auth/logout", bytes.NewBuffer(nil))
+		req.AddCookie(&http.Cookie{Name: refreshTokenCookieName, Value: "refresh_token"})
+		rr := httptest.NewRecorder()
+
+		handler.LogoutHandler(rr, req)
+
+		assert.Equal(t, http.StatusNoContent, rr.Code)
+		var cleared *http.Cookie
+		for _, c := range rr.Result().Cookies() {
+			if c.Name == refreshTokenCookieName {
+				cleared = c
+				break
+			}
+		}
+		assert.NotNil(t, cleared)
+		assert.Equal(t, "", cleared.Value)
+		assert.Equal(t, -1, cleared.MaxAge)
+	})
+
+	t.Run("missing refresh token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/auth/logout", bytes.NewBuffer(nil))
+		rr := httptest.NewRecorder()
+
+		handler.LogoutHandler(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+		var response errors.ErrorResponse
+		err := json.NewDecoder(rr.Body).Decode(&response)
+		assert.NoError(t, err)
+		assert.Equal(t, domain.ErrInvalidRequestBody.GetCode(), response.Code)
+	})
+
+	mockService.AssertExpectations(t)
 }

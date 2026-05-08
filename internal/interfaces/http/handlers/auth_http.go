@@ -30,3 +30,22 @@ func setRefreshTokenCookie(w http.ResponseWriter, cfg *config.Config, refreshTok
 		SameSite: http.SameSiteLaxMode,
 	})
 }
+
+func clearRefreshTokenCookie(w http.ResponseWriter, cfg *config.Config) {
+	path := "/"
+	if cfg != nil {
+		path = cfg.EffectiveAPIBasePath()
+		if path == "" {
+			path = "/"
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    "",
+		Path:     path,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   cfg != nil && cfg.RefreshCookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
