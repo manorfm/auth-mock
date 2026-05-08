@@ -1,6 +1,6 @@
 # Auth Mock
 
-[![Go Version](https://img.shields.io/badge/Go-1.23-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.25-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.1.0-blue.svg)](https://github.com/manorfm/auth-mock/releases)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/manorfm/auth-mock/actions)
@@ -90,7 +90,7 @@ Key features of the JWT implementation:
 
 ### Prerequisites
 
-- Go 1.23 or later
+- Go 1.25 or later
 - Make (optional)
 - Docker (optional)
 

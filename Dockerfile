@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git
@@ -20,7 +20,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-mock ./cmd/main.go
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.21
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates tzdata curl
@@ -42,9 +42,6 @@ USER appuser
 
 # Expose port
 EXPOSE 8080
-
-# Set environment variables
-ENV GIN_MODE=release
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
