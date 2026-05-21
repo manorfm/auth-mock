@@ -39,10 +39,10 @@ type TokenPair struct {
 
 type Claims struct {
 	*jwt.RegisteredClaims
-	Roles    []string               `json:"roles"`
-	Name     string                 `json:"name"`
-	UserType string                 `json:"user_type"`
-	Channels []string               `json:"channels"`
+	Roles    []string `json:"roles"`
+	Name     string   `json:"name"`
+	UserType string   `json:"user_type"`
+	Channels []string `json:"channels"`
 	// SessionVersion is embedded in JWT as claim "sv"; must match User.SessionVersion at validation time.
 	SessionVersion int64                  `json:"sv"`
 	Extra          map[string]interface{} `json:"-"`

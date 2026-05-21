@@ -42,4 +42,4 @@ func pascalToCamel(str string) string {
 	}
 	// Converte a primeira letra para minúscula
 	return strings.ToLower(string(str[0])) + str[1:]
-} 
+}

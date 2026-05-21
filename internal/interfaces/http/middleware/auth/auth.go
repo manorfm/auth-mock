@@ -76,7 +76,7 @@ func (m *AuthMiddleware) RequireAnyRole(roles ...string) func(next http.Handler)
 			}
 			for _, role := range roles {
 				for _, userRole := range userRoles {
-					if role == userRole {
+					if role == userRole || userRole == domain.RoleAdmin || userRole == domain.RoleRoot || strings.HasPrefix(userRole, "platform.") {
 						next.ServeHTTP(w, r)
 						return
 					}

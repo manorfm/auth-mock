@@ -85,7 +85,9 @@ func TestUserService_UpdateUser(t *testing.T) {
 		repo.On("FindByID", ctx, userID).Return(existingUser, nil)
 		repo.On("Update", ctx, mock.Anything).Return(nil)
 
-		err := service.UpdateUser(ctx, userID, "New Name", "9876543210")
+		name := "New Name"
+		phone := "9876543210"
+		_, err := service.UpdateUser(ctx, userID, &name, &phone, nil)
 		assert.NoError(t, err)
 	})
 
@@ -96,7 +98,9 @@ func TestUserService_UpdateUser(t *testing.T) {
 		userID := domain.ULID(ulid.Make())
 		repo.On("FindByID", ctx, userID).Return(nil, domain.ErrUserNotFound)
 
-		err := service.UpdateUser(ctx, userID, "New Name", "9876543210")
+		name := "New Name"
+		phone := "9876543210"
+		_, err := service.UpdateUser(ctx, userID, &name, &phone, nil)
 		assert.Error(t, err)
 		assert.Equal(t, domain.ErrUserNotFound, err)
 	})
@@ -108,7 +112,9 @@ func TestUserService_UpdateUser(t *testing.T) {
 		userID := domain.ULID(ulid.Make())
 		repo.On("FindByID", ctx, userID).Return(nil, assert.AnError)
 
-		err := service.UpdateUser(ctx, userID, "New Name", "9876543210")
+		name := "New Name"
+		phone := "9876543210"
+		_, err := service.UpdateUser(ctx, userID, &name, &phone, nil)
 		assert.Error(t, err)
 		assert.Equal(t, domain.ErrUserNotFound, err)
 	})
@@ -130,7 +136,9 @@ func TestUserService_UpdateUser(t *testing.T) {
 		repo.On("FindByID", ctx, userID).Return(existingUser, nil)
 		repo.On("Update", ctx, mock.Anything).Return(assert.AnError)
 
-		err := service.UpdateUser(ctx, userID, "New Name", "9876543210")
+		name := "New Name"
+		phone := "9876543210"
+		_, err := service.UpdateUser(ctx, userID, &name, &phone, nil)
 		assert.Error(t, err)
 		assert.Equal(t, assert.AnError, err)
 	})

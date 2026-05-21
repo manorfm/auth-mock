@@ -52,6 +52,7 @@ type CreateStandaloneUserRequest struct {
 	Email           string   `json:"email" validate:"required,email"`
 	Password        string   `json:"password" validate:"required,min=8"`
 	Phone           string   `json:"phone" validate:"required"`
+	CPF             string   `json:"cpf,omitempty"`
 	AllowedChannels []string `json:"allowed_channels"`
 	Roles           []string `json:"roles"`
 }
@@ -66,6 +67,7 @@ type RegisterUserResponse struct {
 	Name            string   `json:"name"`
 	Email           string   `json:"email"`
 	Phone           string   `json:"phone,omitempty"`
+	CPF             string   `json:"cpf,omitempty"`
 	UserType        string   `json:"user_type"`
 	AllowedChannels []string `json:"allowed_channels"`
 	Roles           []string `json:"roles"`
@@ -73,15 +75,19 @@ type RegisterUserResponse struct {
 }
 
 func NewRegisterUserResponse(user *domain.User) *RegisterUserResponse {
-	status := "active"
-	if !user.EmailVerified {
-		status = "email_verify"
+	status := user.Status
+	if status == "" {
+		status = domain.UserStatusActive
+		if !user.EmailVerified {
+			status = domain.UserStatusEmailVerify
+		}
 	}
 	return &RegisterUserResponse{
 		ID:              user.ID.String(),
 		Name:            user.Name,
 		Email:           user.Email,
 		Phone:           user.Phone,
+		CPF:             user.CPF,
 		UserType:        user.UserType,
 		AllowedChannels: user.Channels,
 		Roles:           user.Roles,
@@ -117,7 +123,13 @@ func (h *HandlerAuth) RegisterClientHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	user, err := h.authService.RegisterClient(r.Context(), req.Name, req.Email, req.Password, req.Phone)
+	var user *domain.User
+	var err error
+	if req.CPF == "" {
+		user, err = h.authService.RegisterClient(r.Context(), req.Name, req.Email, req.Password, req.Phone)
+	} else {
+		user, err = h.authService.RegisterClientWithCPF(r.Context(), req.Name, req.Email, req.Password, req.Phone, req.CPF)
+	}
 	if err != nil {
 		h.logger.Error("failed to register client user", zap.Error(err))
 		errors.RespondWithError(w, err.(domain.Error))
@@ -144,7 +156,13 @@ func (h *HandlerAuth) RegisterManagementHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	user, err := h.authService.RegisterManagementOwner(r.Context(), req.Name, req.Email, req.Password, req.Phone)
+	var user *domain.User
+	var err error
+	if req.CPF == "" {
+		user, err = h.authService.RegisterManagementOwner(r.Context(), req.Name, req.Email, req.Password, req.Phone)
+	} else {
+		user, err = h.authService.RegisterManagementOwnerWithCPF(r.Context(), req.Name, req.Email, req.Password, req.Phone, req.CPF)
+	}
 	if err != nil {
 		h.logger.Error("failed to register user", zap.Error(err))
 		errors.RespondWithError(w, err.(domain.Error))
@@ -209,7 +227,13 @@ func (h *HandlerAuth) CreateStandaloneUserHandler(w http.ResponseWriter, r *http
 		createErrorMessage(w, err)
 		return
 	}
-	user, err := h.authService.CreateStandaloneUserByAdmin(r.Context(), req.Name, req.Email, req.Password, req.Phone, req.AllowedChannels, req.Roles)
+	var user *domain.User
+	var err error
+	if req.CPF == "" {
+		user, err = h.authService.CreateStandaloneUserByAdmin(r.Context(), req.Name, req.Email, req.Password, req.Phone, req.AllowedChannels, req.Roles)
+	} else {
+		user, err = h.authService.CreateStandaloneUserByAdminWithCPF(r.Context(), req.Name, req.Email, req.Password, req.Phone, req.CPF, req.AllowedChannels, req.Roles)
+	}
 	if err != nil {
 		errors.RespondWithError(w, err.(domain.Error))
 		return

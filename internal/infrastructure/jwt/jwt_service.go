@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -261,6 +262,47 @@ func (j *jwtService) GenerateTokenPair(ctx context.Context, user *domain.User) (
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+func (j *jwtService) GenerateAccessToken(ctx context.Context, subject, name, userType string, roles, channels, audiences, scopes []string, expiresIn time.Duration) (string, error) {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+
+	if len(roles) == 0 {
+		return "", domain.ErrTokenHasNoRoles
+	}
+	if expiresIn <= 0 {
+		expiresIn = j.config.JWTAccessDuration
+	}
+	extraClaims, err := j.config.ParseCustomClaims()
+	if err != nil {
+		j.logger.Warn("Invalid extra claims format", zap.Error(err))
+	}
+	if len(scopes) > 0 {
+		extraClaims["scope"] = strings.Join(scopes, " ")
+	}
+	tokenID := ulid.Make().String()
+	claims := domain.Claims{
+		Roles:          roles,
+		Name:           name,
+		UserType:       userType,
+		Channels:       channels,
+		SessionVersion: 1,
+		RegisteredClaims: &jwt.RegisteredClaims{
+			Subject:   subject,
+			Audience:  audiences,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        tokenID,
+		},
+		Extra: extraClaims,
+	}
+	token, err := j.strategy.Sign(&claims)
+	if err != nil {
+		j.logger.Error("Failed to sign access token", zap.Error(err), zap.String("token_id", tokenID), zap.String("subject", subject))
+		return "", domain.ErrTokenGeneration
+	}
+	return token, nil
 }
 
 func (j *jwtService) GetPublicKey() *rsa.PublicKey {

@@ -9,7 +9,10 @@ import (
 const refreshTokenCookieName = "refresh_token"
 
 func setRefreshTokenCookie(w http.ResponseWriter, cfg *config.Config, refreshToken string) {
-	maxAge := int(cfg.JWTRefreshDuration.Seconds())
+	maxAge := 0
+	if cfg != nil {
+		maxAge = int(cfg.JWTRefreshDuration.Seconds())
+	}
 	if maxAge < 0 {
 		maxAge = 0
 	}

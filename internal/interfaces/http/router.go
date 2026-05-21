@@ -65,7 +65,7 @@ func NewRouter(
 	authHandler := handlers.NewAuthHandler(authService, cfg, logger)
 	userHandler := handlers.NewUserHandler(userService, logger)
 	accountHandler := handlers.NewAccountHandler(accountService, userService, totpService, jwtService, logger)
-	oidcHandler := handlers.NewOIDCHandler(oidcService, jwtService, logger)
+	oidcHandler := handlers.NewOIDCHandlerWithConfig(oidcService, jwtService, cfg, logger)
 	oauth2Handler := handlers.NewOAuth2Handler(oauthRepo, logger)
 	totpHandler := handlers.NewTOTPHandler(totpService, logger)
 
@@ -156,15 +156,20 @@ func NewRouter(
 			r.Get("/accounts/me", accountHandler.GetMeHandler)
 			r.Put("/accounts", accountHandler.UpdateAccountHandler)
 			r.Delete("/accounts", accountHandler.DeleteAccountHandler)
+			r.Get("/me", userHandler.GetMeHandler)
 			r.Get("/users/me", userHandler.GetMeHandler)
 			r.Get("/users/{id}", userHandler.GetUserHandler)
 			r.Put("/users/{id}", userHandler.UpdateUserHandler)
+			r.Patch("/users/{id}", userHandler.UpdateUserHandler)
 			r.Get("/oauth2/authorize", oidcHandler.AuthorizeHandler)
 			r.Get("/oauth2/userinfo", oidcHandler.GetUserInfoHandler)
+			r.Post("/totp/setup", totpHandler.SetupTOTP)
+			r.Post("/totp/confirm", totpHandler.ConfirmTOTP)
 			r.Post("/totp/enable", totpHandler.EnableTOTP)
 			r.Post("/totp/verify", totpHandler.VerifyTOTP)
 			r.Post("/totp/verify-backup", totpHandler.VerifyBackupCode)
 			r.Post("/totp/disable", totpHandler.DisableTOTP)
+			r.Post("/totp/backup-codes/regenerate", totpHandler.RegenerateBackupCodes)
 		})
 	})
 
@@ -185,12 +190,16 @@ func createDefaultUser(authService domain.AuthService, cfg *config.Config, logge
 		if len(roles) == 0 {
 			roles = []string{domain.RoleAdmin}
 		}
-		_, err := authService.Register(context.Background(), "Default Admin", cfg.DefaultUserEmail, cfg.DefaultUserPassword, "0000000000", roles)
+		name := strings.TrimSpace(cfg.DefaultUserName)
+		if name == "" {
+			name = "Default Admin"
+		}
+		_, err := authService.Register(context.Background(), name, cfg.DefaultUserEmail, cfg.DefaultUserPassword, "0000000000", roles)
 		if err != nil {
 			logger.Warn("Default user not created", zap.Error(err))
 			return
 		}
-		logger.Info("Default user created", zap.String("email", cfg.DefaultUserEmail), zap.Strings("roles", roles))
+		logger.Info("Default user created", zap.String("name", name), zap.String("email", cfg.DefaultUserEmail), zap.Strings("roles", roles))
 	}
 }
 

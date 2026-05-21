@@ -12,8 +12,17 @@ type OAuth2Client struct {
 	RedirectURIs []string  `json:"redirect_uris"`
 	GrantTypes   []string  `json:"grant_types"`
 	Scopes       []string  `json:"scopes"`
+	M2MRoles     []string  `json:"m2m_roles,omitempty"`
+	M2MAudiences []string  `json:"m2m_audiences,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type OAuth2ClientCredentialsResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int64  `json:"expires_in"`
+	Scope       string `json:"scope,omitempty"`
 }
 
 // AuthorizationCode represents an OAuth2 authorization code
@@ -33,6 +42,8 @@ type AuthorizationCode struct {
 type OAuth2Service interface {
 	// ValidateClient validates if a client exists and if the redirect URI is allowed
 	ValidateClient(ctx context.Context, clientID, redirectURI string) (*OAuth2Client, error)
+
+	ValidateClientCredentials(ctx context.Context, clientID, clientSecret string) (*OAuth2Client, error)
 
 	// GenerateAuthorizationCode generates a new authorization code for the client and user
 	GenerateAuthorizationCode(ctx context.Context, clientID, userID string, scopes []string, codeChallenge, codeChallengeMethod string) (string, error)

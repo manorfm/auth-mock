@@ -29,6 +29,14 @@ func (m *mockOAuth2Service) ValidateClient(ctx context.Context, clientID, redire
 	return args.Get(0).(*domain.OAuth2Client), args.Error(1)
 }
 
+func (m *mockOAuth2Service) ValidateClientCredentials(ctx context.Context, clientID, clientSecret string) (*domain.OAuth2Client, error) {
+	args := m.Called(ctx, clientID, clientSecret)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.OAuth2Client), args.Error(1)
+}
+
 func (m *mockOAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID, userID string, scopes []string, codeChallenge, codeChallengeMethod string) (string, error) {
 	args := m.Called(ctx, clientID, userID, scopes, codeChallenge, codeChallengeMethod)
 	return args.String(0), args.Error(1)
@@ -292,6 +300,16 @@ func (m *mockTOTPService) EnableTOTP(userID string) (*domain.TOTP, error) {
 	return args.Get(0).(*domain.TOTP), args.Error(1)
 }
 
+func (m *mockTOTPService) SetupTOTP(userID string) (*domain.TOTP, error) {
+	args := m.Called(userID)
+	return args.Get(0).(*domain.TOTP), args.Error(1)
+}
+
+func (m *mockTOTPService) ConfirmTOTP(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockTOTPService) VerifyTOTP(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
@@ -300,6 +318,16 @@ func (m *mockTOTPService) VerifyTOTP(userID, code string) error {
 func (m *mockTOTPService) VerifyBackupCode(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
+}
+
+func (m *mockTOTPService) VerifyTOTPOrBackup(userID, code string) error {
+	args := m.Called(userID, code)
+	return args.Error(0)
+}
+
+func (m *mockTOTPService) RegenerateBackupCodes(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *mockTOTPService) DisableTOTP(userID string) error {
@@ -402,9 +430,12 @@ func TestOIDCService_GetUserInfo(t *testing.T) {
 			userID: userID,
 			mockSetup: func(m *mockUserRepository, t *mockTOTPService) {
 				m.On("FindByID", mock.Anything, userID).Return(&domain.User{
-					ID:    userID,
-					Name:  "Test User",
-					Email: "test@example.com",
+					ID:     userID,
+					Name:   "Test User",
+					Email:  "test@example.com",
+					Phone:  "85999999999",
+					CPF:    "12345678901",
+					Status: domain.UserStatusActive,
 				}, nil)
 				t.On("GetTOTPSecret", mock.Anything, userID.String()).Return("", domain.ErrTOTPNotEnabled)
 			},
@@ -413,6 +444,8 @@ func TestOIDCService_GetUserInfo(t *testing.T) {
 				Name:          "Test User",
 				Email:         "test@example.com",
 				EmailVerified: true,
+				Phone:         "85999999999",
+				CPF:           "12345678901",
 				AMR:           []string{"pwd"},
 			},
 		},
@@ -710,7 +743,7 @@ func TestOIDCService_GetOpenIDConfiguration(t *testing.T) {
 				"id_token_signing_alg_values_supported": []string{"RS256"},
 				"scopes_supported":                      []string{"openid", "profile", "email"},
 				"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
-				"claims_supported":                      []string{"sub", "iss", "name", "email"},
+				"claims_supported":                      []string{"sub", "iss", "name", "email", "email_verified", "phone_number", "cpf"},
 			},
 		},
 		{

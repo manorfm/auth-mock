@@ -56,18 +56,30 @@ func NewAuthService(
 
 // Register creates a new user
 func (s *AuthService) Register(ctx context.Context, name, email, password, phone string, roles []string) (*domain.User, error) {
-	return s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeManagement, []string{domain.ChannelManagementPanel}, roles, false, true)
+	return s.registerWithProfile(ctx, name, email, password, phone, "", domain.UserTypeManagement, []string{domain.ChannelManagementPanel}, roles, false, true)
 }
 
 func (s *AuthService) RegisterClient(ctx context.Context, name, email, password, phone string) (*domain.User, error) {
-	return s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeClient, []string{domain.ChannelClientApp}, []string{domain.RoleUser}, false, false)
+	return s.RegisterClientWithCPF(ctx, name, email, password, phone, "")
+}
+
+func (s *AuthService) RegisterClientWithCPF(ctx context.Context, name, email, password, phone, cpf string) (*domain.User, error) {
+	return s.registerWithProfile(ctx, name, email, password, phone, cpf, domain.UserTypeClient, []string{domain.ChannelClientApp}, []string{domain.RoleUser}, false, false)
 }
 
 func (s *AuthService) RegisterManagementOwner(ctx context.Context, name, email, password, phone string) (*domain.User, error) {
-	return s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeManagement, []string{domain.ChannelManagementPanel}, []string{domain.RoleUser, domain.RoleAdmin}, false, true)
+	return s.RegisterManagementOwnerWithCPF(ctx, name, email, password, phone, "")
+}
+
+func (s *AuthService) RegisterManagementOwnerWithCPF(ctx context.Context, name, email, password, phone, cpf string) (*domain.User, error) {
+	return s.registerWithProfile(ctx, name, email, password, phone, cpf, domain.UserTypeManagement, []string{domain.ChannelManagementPanel}, []string{domain.RoleUser, domain.RoleAdmin}, false, true)
 }
 
 func (s *AuthService) CreateStandaloneUserByAdmin(ctx context.Context, name, email, password, phone string, channels, roles []string) (*domain.User, error) {
+	return s.CreateStandaloneUserByAdminWithCPF(ctx, name, email, password, phone, "", channels, roles)
+}
+
+func (s *AuthService) CreateStandaloneUserByAdminWithCPF(ctx context.Context, name, email, password, phone, cpf string, channels, roles []string) (*domain.User, error) {
 	if len(channels) == 0 {
 		channels = []string{domain.ChannelManagementPanel}
 	}
@@ -78,14 +90,14 @@ func (s *AuthService) CreateStandaloneUserByAdmin(ctx context.Context, name, ema
 	if err := validateChannels(channels); err != nil {
 		return nil, err
 	}
-	u, err := s.registerWithProfile(ctx, name, email, password, phone, domain.UserTypeStandalone, channels, []string{domain.RoleUser}, true, false)
+	u, err := s.registerWithProfile(ctx, name, email, password, phone, cpf, domain.UserTypeStandalone, channels, []string{domain.RoleUser}, true, false)
 	if err == nil {
 		s.auditAuth(ctx, "admin_create_standalone_user", zap.String("target_user_id", u.ID.String()), zap.String("email", u.Email))
 	}
 	return u, err
 }
 
-func (s *AuthService) registerWithProfile(ctx context.Context, name, email, password, phone, userType string, channels, roles []string, forceEmailVerified bool, allowElevatedRoles bool) (*domain.User, error) {
+func (s *AuthService) registerWithProfile(ctx context.Context, name, email, password, phone, cpf, userType string, channels, roles []string, forceEmailVerified bool, allowElevatedRoles bool) (*domain.User, error) {
 	// Check if user already exists
 	exists, err := s.userRepo.ExistsByEmail(ctx, email)
 	if err != nil {
@@ -111,6 +123,10 @@ func (s *AuthService) registerWithProfile(ctx context.Context, name, email, pass
 	}
 	if forceEmailVerified {
 		emailVerified = true
+	}
+	status := domain.UserStatusEmailVerify
+	if emailVerified {
+		status = domain.UserStatusActive
 	}
 	channels = normalizeChannels(channels)
 	if len(channels) == 0 {
@@ -138,9 +154,11 @@ func (s *AuthService) registerWithProfile(ctx context.Context, name, email, pass
 		Email:          email,
 		Password:       string(hashedPassword),
 		Phone:          phone,
+		CPF:            cpf,
 		Roles:          roles,
 		UserType:       userType,
 		Channels:       channels,
+		Status:         status,
 		EmailVerified:  emailVerified,
 		SessionVersion: 1,
 		CreatedAt:      time.Now(),

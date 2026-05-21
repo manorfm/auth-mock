@@ -69,6 +69,14 @@ func (m *mockAuthService) RegisterClient(ctx context.Context, name, email, passw
 	return args.Get(0).(*domain.User), args.Error(1)
 }
 
+func (m *mockAuthService) RegisterClientWithCPF(ctx context.Context, name, email, password, phone, cpf string) (*domain.User, error) {
+	args := m.Called(ctx, name, email, password, phone, cpf)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
 func (m *mockAuthService) RegisterManagementOwner(ctx context.Context, name, email, password, phone string) (*domain.User, error) {
 	args := m.Called(ctx, name, email, password, phone)
 	if args.Get(0) == nil {
@@ -77,8 +85,24 @@ func (m *mockAuthService) RegisterManagementOwner(ctx context.Context, name, ema
 	return args.Get(0).(*domain.User), args.Error(1)
 }
 
+func (m *mockAuthService) RegisterManagementOwnerWithCPF(ctx context.Context, name, email, password, phone, cpf string) (*domain.User, error) {
+	args := m.Called(ctx, name, email, password, phone, cpf)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
 func (m *mockAuthService) CreateStandaloneUserByAdmin(ctx context.Context, name, email, password, phone string, channels, roles []string) (*domain.User, error) {
 	args := m.Called(ctx, name, email, password, phone, channels, roles)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
+func (m *mockAuthService) CreateStandaloneUserByAdminWithCPF(ctx context.Context, name, email, password, phone, cpf string, channels, roles []string) (*domain.User, error) {
+	args := m.Called(ctx, name, email, password, phone, cpf, channels, roles)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

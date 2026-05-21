@@ -82,6 +82,14 @@ func (l *localStrategy) Sign(claims *domain.Claims) (string, error) {
 	if len(claims.Channels) > 0 {
 		mapClaims["channels"] = claims.Channels
 	}
+	if len(claims.Audience) > 0 {
+		mapClaims["aud"] = claims.Audience
+	}
+	if claims.Extra != nil {
+		if scope, ok := claims.Extra["scope"]; ok {
+			mapClaims["scope"] = scope
+		}
+	}
 	sv := claims.SessionVersion
 	if sv < 1 {
 		sv = 1

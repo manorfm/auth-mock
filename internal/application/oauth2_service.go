@@ -55,6 +55,17 @@ func (s *OAuth2Service) ValidateClient(ctx context.Context, clientID, redirectUR
 	return client, nil
 }
 
+func (s *OAuth2Service) ValidateClientCredentials(ctx context.Context, clientID, clientSecret string) (*domain.OAuth2Client, error) {
+	client, err := s.oauthRepo.FindClientByID(ctx, clientID)
+	if err != nil {
+		return nil, domain.ErrClientNotFound
+	}
+	if client.Secret != clientSecret {
+		return nil, domain.ErrInvalidClient
+	}
+	return client, nil
+}
+
 func (s *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID, userID string, scopes []string, codeChallenge, codeChallengeMethod string) (string, error) {
 	s.logger.Debug("Generating authorization code",
 		zap.String("client_id", clientID),

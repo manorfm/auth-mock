@@ -38,6 +38,7 @@ type Config struct {
 	SMTP         SMTPConfig
 
 	// Default user configuration
+	DefaultUserName     string
 	DefaultUserEmail    string
 	DefaultUserPassword string
 	DefaultUserRoles    []string
@@ -118,6 +119,7 @@ func LoadConfig(logger *zap.Logger) (*Config, error) {
 		},
 
 		// Default user configuration
+		DefaultUserName:     getEnv("DEFAULT_USER_NAME", "Default Admin"),
 		DefaultUserEmail:    getEnv("DEFAULT_USER_EMAIL", ""),
 		DefaultUserPassword: getEnv("DEFAULT_USER_PASSWORD", ""),
 		DefaultUserRoles:    strings.Split(getEnv("DEFAULT_USER_ROLES", "admin"), ","),

@@ -81,8 +81,10 @@ func (r *UserRepository) Update(ctx context.Context, u *domain.User) error {
 	}
 	existing.Name = u.Name
 	existing.Phone = u.Phone
+	existing.CPF = u.CPF
 	existing.UpdatedAt = time.Now()
 	existing.EmailVerified = u.EmailVerified
+	existing.Status = u.Status
 	existing.Roles = u.Roles
 	existing.UserType = u.UserType
 	existing.Channels = u.Channels

@@ -25,18 +25,35 @@ func NewUserHandler(userService domain.UserService, logger *zap.Logger) *Handler
 }
 
 type UserResponse struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Phone string `json:"phone"`
+	ID              string   `json:"id"`
+	Email           string   `json:"email"`
+	Name            string   `json:"name"`
+	Phone           string   `json:"phone"`
+	CPF             string   `json:"cpf,omitempty"`
+	UserType        string   `json:"user_type,omitempty"`
+	AllowedChannels []string `json:"allowed_channels,omitempty"`
+	Roles           []string `json:"roles,omitempty"`
+	Status          string   `json:"status,omitempty"`
 }
 
 func NewUserResponse(user *domain.User) *UserResponse {
+	status := user.Status
+	if status == "" {
+		status = domain.UserStatusActive
+		if !user.EmailVerified {
+			status = domain.UserStatusEmailVerify
+		}
+	}
 	return &UserResponse{
-		ID:    user.ID.String(),
-		Email: user.Email,
-		Name:  user.Name,
-		Phone: user.Phone,
+		ID:              user.ID.String(),
+		Email:           user.Email,
+		Name:            user.Name,
+		Phone:           user.Phone,
+		CPF:             user.CPF,
+		UserType:        user.UserType,
+		AllowedChannels: user.Channels,
+		Roles:           user.Roles,
+		Status:          status,
 	}
 }
 
@@ -170,7 +187,13 @@ func (h *HandlerUser) UpdateUserHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.userService.UpdateUser(r.Context(), *userID, req.Name, req.Phone); err != nil {
+	if req.Name == nil && req.Phone == nil && req.CPF == nil {
+		errors.RespondWithError(w, domain.ErrInvalidField)
+		return
+	}
+
+	user, err := h.userService.UpdateUser(r.Context(), *userID, req.Name, req.Phone, req.CPF)
+	if err != nil {
 		h.logger.Error("failed to update user", zap.Error(err))
 		if err == domain.ErrUserNotFound {
 			errors.RespondWithError(w, domain.ErrUserNotFound)
@@ -182,7 +205,7 @@ func (h *HandlerUser) UpdateUserHandler(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"message": "User updated successfully"}); err != nil {
+	if err := json.NewEncoder(w).Encode(NewUserResponse(user)); err != nil {
 		h.logger.Error("failed to encode response", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrInternal)
 		return

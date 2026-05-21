@@ -116,6 +116,7 @@ EMAIL_ENABLED=false
 REFRESH_COOKIE_SECURE=false
 
 # Default User Configuration
+DEFAULT_USER_NAME="Default Admin"
 DEFAULT_USER_EMAIL=admin@example.com
 DEFAULT_USER_PASSWORD=admin123
 DEFAULT_USER_ROLES=admin,user  # Comma-separated list of roles

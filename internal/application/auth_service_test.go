@@ -191,6 +191,22 @@ func (m *authMockTOTPService) EnableTOTP(userID string) (*domain.TOTP, error) {
 	return args.Get(0).(*domain.TOTP), args.Error(1)
 }
 
+func (m *authMockTOTPService) SetupTOTP(userID string) (*domain.TOTP, error) {
+	args := m.Called(userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.TOTP), args.Error(1)
+}
+
+func (m *authMockTOTPService) ConfirmTOTP(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *authMockTOTPService) VerifyTOTP(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
@@ -199,6 +215,19 @@ func (m *authMockTOTPService) VerifyTOTP(userID, code string) error {
 func (m *authMockTOTPService) VerifyBackupCode(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
+}
+
+func (m *authMockTOTPService) VerifyTOTPOrBackup(userID, code string) error {
+	args := m.Called(userID, code)
+	return args.Error(0)
+}
+
+func (m *authMockTOTPService) RegenerateBackupCodes(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *authMockTOTPService) DisableTOTP(userID string) error {

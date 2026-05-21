@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/manorfm/auth-mock/internal/infrastructure/config"
@@ -18,6 +19,10 @@ type OIDCService struct {
 	totpService   domain.TOTPService
 	config        *config.Config
 	logger        *zap.Logger
+}
+
+type accessTokenIssuer interface {
+	GenerateAccessToken(ctx context.Context, subject, name, userType string, roles, channels, audiences, scopes []string, expiresIn time.Duration) (string, error)
 }
 
 func NewOIDCService(oauth2Service domain.OAuth2Service, jwtService domain.JWTService, userRepo domain.UserRepository, totpService domain.TOTPService, config *config.Config, logger *zap.Logger) *OIDCService {
@@ -88,17 +93,20 @@ func (s *OIDCService) GetUserInfo(ctx context.Context, userID string) (*domain.U
 	}
 
 	amr := []string{"pwd"}
-	secret, err := s.totpService.GetTOTPSecret(context.Background(), user.ID.String())
+	secret, err := s.totpService.GetTOTPSecret(ctx, user.ID.String())
 	if err == nil && secret != "" {
 		amr = append(amr, "totp")
 	}
 
-	// Return user info
+	emailVerified := user.Status == domain.UserStatusActive || user.Status == domain.UserStatusChangePassword
+
 	return &domain.UserInfo{
 		Sub:           user.ID.String(),
 		Name:          user.Name,
 		Email:         user.Email,
-		EmailVerified: true,
+		EmailVerified: emailVerified,
+		Phone:         user.Phone,
+		CPF:           user.CPF,
 		AMR:           amr,
 	}, nil
 }
@@ -129,7 +137,7 @@ func (s *OIDCService) GetOpenIDConfiguration(ctx context.Context) (map[string]in
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"scopes_supported":                      []string{"openid", "profile", "email"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
-		"claims_supported":                      []string{"sub", "iss", "name", "email"},
+		"claims_supported":                      []string{"sub", "iss", "name", "email", "email_verified", "phone_number", "cpf"},
 	}, nil
 }
 
@@ -226,6 +234,66 @@ func (s *OIDCService) RefreshToken(ctx context.Context, refreshToken string) (*d
 	}
 
 	return tokenPair, nil
+}
+
+func (s *OIDCService) IssueClientCredentialsAccess(ctx context.Context, clientID, clientSecret, scope string) (*domain.OAuth2ClientCredentialsResponse, error) {
+	client, err := s.oauth2Service.ValidateClientCredentials(ctx, clientID, clientSecret)
+	if err != nil {
+		return nil, err
+	}
+	if !containsString(client.GrantTypes, "client_credentials") {
+		return nil, domain.ErrInvalidClient
+	}
+	if len(client.M2MRoles) == 0 || len(client.M2MAudiences) == 0 {
+		return nil, domain.ErrOAuth2ClientCredentialsConfig
+	}
+	requestedScopes := splitScope(scope)
+	if len(requestedScopes) == 0 {
+		return nil, domain.ErrInvalidScope
+	}
+	for _, requested := range requestedScopes {
+		if !containsString(client.Scopes, requested) {
+			return nil, domain.ErrInvalidScope
+		}
+	}
+	expiresIn := s.config.JWTAccessDuration
+	issuer, ok := s.jwtService.(accessTokenIssuer)
+	if !ok {
+		return nil, domain.ErrTokenGeneration
+	}
+	token, err := issuer.GenerateAccessToken(ctx, client.ID, client.ID, domain.UserTypeMachine, client.M2MRoles, nil, client.M2MAudiences, requestedScopes, expiresIn)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.OAuth2ClientCredentialsResponse{
+		AccessToken: token,
+		TokenType:   "Bearer",
+		ExpiresIn:   int64(expiresIn / time.Second),
+		Scope:       strings.Join(requestedScopes, " "),
+	}, nil
+}
+
+func splitScope(scope string) []string {
+	parts := strings.Fields(scope)
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OIDCService) Authorize(ctx context.Context, clientID, redirectURI, state, scope string) (string, error) {

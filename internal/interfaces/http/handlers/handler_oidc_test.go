@@ -142,8 +142,16 @@ func (m *MockOAuth2Service) ValidateClient(ctx context.Context, clientID, redire
 	return args.Get(0).(*domain.OAuth2Client), args.Error(1)
 }
 
-func (m *MockOAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID string, userID string, scopes []string) (string, error) {
-	args := m.Called(ctx, clientID, userID, scopes)
+func (m *MockOAuth2Service) ValidateClientCredentials(ctx context.Context, clientID, clientSecret string) (*domain.OAuth2Client, error) {
+	args := m.Called(ctx, clientID, clientSecret)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.OAuth2Client), args.Error(1)
+}
+
+func (m *MockOAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID string, userID string, scopes []string, codeChallenge, codeChallengeMethod string) (string, error) {
+	args := m.Called(ctx, clientID, userID, scopes, codeChallenge, codeChallengeMethod)
 	return args.String(0), args.Error(1)
 }
 
@@ -199,6 +207,14 @@ func (m *mockOIDCService) RefreshToken(ctx context.Context, refreshToken string)
 	return args.Get(0).(*domain.TokenPair), args.Error(1)
 }
 
+func (m *mockOIDCService) IssueClientCredentialsAccess(ctx context.Context, clientID, clientSecret, scope string) (*domain.OAuth2ClientCredentialsResponse, error) {
+	args := m.Called(ctx, clientID, clientSecret, scope)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.OAuth2ClientCredentialsResponse), args.Error(1)
+}
+
 func (m *mockOIDCService) Authorize(ctx context.Context, clientID, redirectURI, state, scope string) (string, error) {
 	args := m.Called(ctx, clientID, redirectURI, state, scope)
 	return args.String(0), args.Error(1)
@@ -245,7 +261,7 @@ func TestHandleOpenIDConfiguration(t *testing.T) {
 					"id_token_signing_alg_values_supported": []interface{}{"RS256"},
 					"scopes_supported":                      []interface{}{"openid", "profile", "email"},
 					"token_endpoint_auth_methods_supported": []interface{}{"client_secret_basic", "client_secret_post"},
-					"claims_supported":                      []interface{}{"sub", "iss", "name", "email"},
+					"claims_supported":                      []interface{}{"sub", "iss", "name", "email", "email_verified", "phone_number", "cpf"},
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -260,7 +276,7 @@ func TestHandleOpenIDConfiguration(t *testing.T) {
 				"id_token_signing_alg_values_supported": []interface{}{"RS256"},
 				"scopes_supported":                      []interface{}{"openid", "profile", "email"},
 				"token_endpoint_auth_methods_supported": []interface{}{"client_secret_basic", "client_secret_post"},
-				"claims_supported":                      []interface{}{"sub", "iss", "name", "email"},
+				"claims_supported":                      []interface{}{"sub", "iss", "name", "email", "email_verified", "phone_number", "cpf"},
 			},
 		},
 		{
@@ -821,7 +837,8 @@ func TestHandleToken(t *testing.T) {
 				var response domain.TokenPair
 				err := json.NewDecoder(rr.Body).Decode(&response)
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedBody.(*domain.TokenPair), &response)
+				assert.Equal(t, tt.expectedBody.(*domain.TokenPair).AccessToken, response.AccessToken)
+				assert.Empty(t, response.RefreshToken)
 			} else {
 				var response errors.ErrorResponse
 				err := json.NewDecoder(rr.Body).Decode(&response)
@@ -872,6 +889,8 @@ func TestHandleUserInfo(t *testing.T) {
 						Name:          "Test User",
 						Email:         "test@example.com",
 						EmailVerified: true,
+						Phone:         "85999999999",
+						CPF:           "12345678901",
 						AMR:           []string{"pwd"},
 					}, nil)
 			},
@@ -881,6 +900,8 @@ func TestHandleUserInfo(t *testing.T) {
 				"name":           "Test User",
 				"email":          "test@example.com",
 				"email_verified": true,
+				"phone_number":   "85999999999",
+				"cpf":            "12345678901",
 				"amr":            []interface{}{"pwd"},
 			},
 		},
@@ -1032,7 +1053,7 @@ func TestOIDCHandler_TokenHandler(t *testing.T) {
 					err := json.NewDecoder(w.Body).Decode(&response)
 					assert.NoError(t, err)
 					assert.Equal(t, expectedToken.AccessToken, response.AccessToken)
-					assert.Equal(t, expectedToken.RefreshToken, response.RefreshToken)
+					assert.Empty(t, response.RefreshToken)
 				} else {
 					var response errors.ErrorResponse
 					err := json.NewDecoder(w.Body).Decode(&response)
@@ -1073,7 +1094,7 @@ func TestOIDCHandler_GetOpenIDConfigurationHandler(t *testing.T) {
 						"id_token_signing_alg_values_supported": []interface{}{"RS256"},
 						"scopes_supported":                      []interface{}{"openid", "profile", "email"},
 						"token_endpoint_auth_methods_supported": []interface{}{"client_secret_basic", "client_secret_post"},
-						"claims_supported":                      []interface{}{"sub", "iss", "name", "email"},
+						"claims_supported":                      []interface{}{"sub", "iss", "name", "email", "email_verified", "phone_number", "cpf"},
 					}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -1088,7 +1109,7 @@ func TestOIDCHandler_GetOpenIDConfigurationHandler(t *testing.T) {
 				"id_token_signing_alg_values_supported": []interface{}{"RS256"},
 				"scopes_supported":                      []interface{}{"openid", "profile", "email"},
 				"token_endpoint_auth_methods_supported": []interface{}{"client_secret_basic", "client_secret_post"},
-				"claims_supported":                      []interface{}{"sub", "iss", "name", "email"},
+				"claims_supported":                      []interface{}{"sub", "iss", "name", "email", "email_verified", "phone_number", "cpf"},
 			},
 		},
 		{

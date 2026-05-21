@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/manorfm/auth-mock/internal/domain"
@@ -13,6 +14,8 @@ type totpServiceImpl struct {
 	repo      domain.TOTPRepository
 	generator domain.TOTPGenerator
 	logger    *zap.Logger
+	pending   map[string]string
+	mu        sync.RWMutex
 }
 
 // NewTOTPService creates a new TOTP service
@@ -21,11 +24,11 @@ func NewTOTPService(repo domain.TOTPRepository, generator domain.TOTPGenerator, 
 		repo:      repo,
 		generator: generator,
 		logger:    logger,
+		pending:   make(map[string]string),
 	}
 }
 
-// EnableTOTP enables TOTP for a user
-func (s *totpServiceImpl) EnableTOTP(userID string) (*domain.TOTP, error) {
+func (s *totpServiceImpl) SetupTOTP(userID string) (*domain.TOTP, error) {
 	secret, err := s.repo.GetTOTPSecret(context.Background(), userID)
 	if err != nil && err != domain.ErrTOTPNotEnabled {
 		s.logger.Error("Failed to get TOTP secret",
@@ -45,27 +48,9 @@ func (s *totpServiceImpl) EnableTOTP(userID string) (*domain.TOTP, error) {
 		return nil, err
 	}
 
-	backupCodes, err := s.generator.GenerateBackupCodes(10)
-	if err != nil {
-		s.logger.Error("Failed to generate backup codes",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		return nil, err
-	}
-
-	if err := s.repo.SaveTOTPSecret(context.Background(), userID, secret); err != nil {
-		s.logger.Error("Failed to save TOTP secret",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		return nil, err
-	}
-
-	if err := s.repo.SaveBackupCodes(context.Background(), userID, backupCodes); err != nil {
-		s.logger.Error("Failed to save backup codes",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		return nil, err
-	}
+	s.mu.Lock()
+	s.pending[userID] = secret
+	s.mu.Unlock()
 
 	config := &domain.TOTPConfig{
 		Issuer:      "User Manager Service",
@@ -83,7 +68,59 @@ func (s *totpServiceImpl) EnableTOTP(userID string) (*domain.TOTP, error) {
 			zap.Error(err))
 		return nil, err
 	}
-	return &domain.TOTP{QRCode: qrCode, BackupCodes: backupCodes}, nil
+	return &domain.TOTP{QRCode: qrCode}, nil
+}
+
+func (s *totpServiceImpl) ConfirmTOTP(userID, code string) ([]string, error) {
+	s.mu.RLock()
+	secret := s.pending[userID]
+	s.mu.RUnlock()
+	if secret == "" {
+		return nil, domain.ErrTOTPNotEnabled
+	}
+	if err := s.generator.ValidateCode(secret, code); err != nil {
+		return nil, err
+	}
+	backupCodes, err := s.generator.GenerateBackupCodes(10)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveTOTPSecret(context.Background(), userID, secret); err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveBackupCodes(context.Background(), userID, backupCodes); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	delete(s.pending, userID)
+	s.mu.Unlock()
+	return backupCodes, nil
+}
+
+// EnableTOTP enables TOTP for a user. Deprecated: use SetupTOTP + ConfirmTOTP.
+func (s *totpServiceImpl) EnableTOTP(userID string) (*domain.TOTP, error) {
+	setup, err := s.SetupTOTP(userID)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	secret := s.pending[userID]
+	s.mu.RUnlock()
+	backupCodes, err := s.generator.GenerateBackupCodes(10)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveTOTPSecret(context.Background(), userID, secret); err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveBackupCodes(context.Background(), userID, backupCodes); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	delete(s.pending, userID)
+	s.mu.Unlock()
+	setup.BackupCodes = backupCodes
+	return setup, nil
 }
 
 // VerifyTOTP verifies a TOTP code for a user
@@ -132,6 +169,27 @@ func (s *totpServiceImpl) VerifyBackupCode(userID, code string) error {
 	}
 
 	return nil
+}
+
+func (s *totpServiceImpl) VerifyTOTPOrBackup(userID, code string) error {
+	if err := s.VerifyTOTP(userID, code); err == nil {
+		return nil
+	}
+	return s.VerifyBackupCode(userID, code)
+}
+
+func (s *totpServiceImpl) RegenerateBackupCodes(userID, code string) ([]string, error) {
+	if err := s.VerifyTOTPOrBackup(userID, code); err != nil {
+		return nil, err
+	}
+	backupCodes, err := s.generator.GenerateBackupCodes(10)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.SaveBackupCodes(context.Background(), userID, backupCodes); err != nil {
+		return nil, err
+	}
+	return backupCodes, nil
 }
 
 // DisableTOTP disables TOTP for a user

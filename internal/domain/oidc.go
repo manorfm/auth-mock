@@ -9,7 +9,9 @@ type UserInfo struct {
 	Name          string   `json:"name"`
 	Email         string   `json:"email"`
 	EmailVerified bool     `json:"email_verified"`
-	AMR           []string `json:"amr"`
+	Phone         string   `json:"phone_number,omitempty"`
+	CPF           string   `json:"cpf,omitempty"`
+	AMR           []string `json:"amr,omitempty"`
 }
 
 // OIDCService defines the interface for OpenID Connect operations
@@ -25,6 +27,8 @@ type OIDCService interface {
 
 	// RefreshToken refreshes an access token using a refresh token
 	RefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error)
+
+	IssueClientCredentialsAccess(ctx context.Context, clientID, clientSecret, scope string) (*OAuth2ClientCredentialsResponse, error)
 
 	// Authorize handles the authorization request and returns an authorization code
 	Authorize(ctx context.Context, clientID, redirectURI, state, scope string) (string, error)

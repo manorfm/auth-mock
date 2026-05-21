@@ -196,6 +196,8 @@ var (
 
 	// ErrSessionRevoked is returned when the JWT session version is older than the user's current version.
 	ErrSessionRevoked = NewBusinessError("U0069", "Session revoked")
+
+	ErrOAuth2ClientCredentialsConfig = NewBusinessError("U0070", "OAuth2 client_credentials client is missing m2m roles or audiences")
 )
 
 func (e *BusinessError) GetCode() string {

@@ -71,4 +71,4 @@ func (s *AccountService) DeleteAccount(ctx context.Context, id ulid.ULID) error 
 	}
 
 	return nil
-} 
+}

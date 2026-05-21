@@ -19,6 +19,8 @@ type OAuth2ClientRequest struct {
 	RedirectURIs []string `json:"redirect_uris" validate:"required,min=1"`
 	GrantTypes   []string `json:"grant_types" validate:"required,min=1"`
 	Scopes       []string `json:"scopes" validate:"required,min=1"`
+	M2MRoles     []string `json:"m2m_roles"`
+	M2MAudiences []string `json:"m2m_audiences"`
 }
 
 // OAuth2Handler handles OAuth2 client management
@@ -50,6 +52,10 @@ func (h *OAuth2Handler) CreateClientHandler(w http.ResponseWriter, r *http.Reque
 		createErrorMessage(w, err)
 		return
 	}
+	if err := validateM2MClientRequest(req); err != nil {
+		errors.RespondWithError(w, err)
+		return
+	}
 	// Check if client already exists
 	exists, err := h.oauthRepo.FindClientByID(r.Context(), req.ID)
 	if err == nil && exists != nil {
@@ -65,6 +71,8 @@ func (h *OAuth2Handler) CreateClientHandler(w http.ResponseWriter, r *http.Reque
 		RedirectURIs: req.RedirectURIs,
 		GrantTypes:   req.GrantTypes,
 		Scopes:       req.Scopes,
+		M2MRoles:     req.M2MRoles,
+		M2MAudiences: req.M2MAudiences,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -106,6 +114,10 @@ func (h *OAuth2Handler) UpdateClientHandler(w http.ResponseWriter, r *http.Reque
 		createErrorMessage(w, err)
 		return
 	}
+	if err := validateM2MClientRequest(req); err != nil {
+		errors.RespondWithError(w, err)
+		return
+	}
 
 	// Check if client exists
 	client, err := h.oauthRepo.FindClientByID(r.Context(), clientID)
@@ -120,6 +132,8 @@ func (h *OAuth2Handler) UpdateClientHandler(w http.ResponseWriter, r *http.Reque
 	client.RedirectURIs = req.RedirectURIs
 	client.GrantTypes = req.GrantTypes
 	client.Scopes = req.Scopes
+	client.M2MRoles = req.M2MRoles
+	client.M2MAudiences = req.M2MAudiences
 	client.UpdatedAt = time.Now()
 
 	if err := h.oauthRepo.UpdateClient(r.Context(), client); err != nil {
@@ -133,6 +147,17 @@ func (h *OAuth2Handler) UpdateClientHandler(w http.ResponseWriter, r *http.Reque
 	// Return updated client
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(client)
+}
+
+func validateM2MClientRequest(req OAuth2ClientRequest) domain.Error {
+	for _, grant := range req.GrantTypes {
+		if grant == "client_credentials" {
+			if len(req.M2MRoles) == 0 || len(req.M2MAudiences) == 0 {
+				return domain.ErrOAuth2ClientCredentialsConfig
+			}
+		}
+	}
+	return nil
 }
 
 // DeleteClientHandler handles deleting an OAuth2 client

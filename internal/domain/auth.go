@@ -30,8 +30,11 @@ type AuthService interface {
 	// Register creates a new user
 	Register(ctx context.Context, name, email, password, phone string, roles []string) (*User, error)
 	RegisterClient(ctx context.Context, name, email, password, phone string) (*User, error)
+	RegisterClientWithCPF(ctx context.Context, name, email, password, phone, cpf string) (*User, error)
 	RegisterManagementOwner(ctx context.Context, name, email, password, phone string) (*User, error)
+	RegisterManagementOwnerWithCPF(ctx context.Context, name, email, password, phone, cpf string) (*User, error)
 	CreateStandaloneUserByAdmin(ctx context.Context, name, email, password, phone string, channels, roles []string) (*User, error)
+	CreateStandaloneUserByAdminWithCPF(ctx context.Context, name, email, password, phone, cpf string, channels, roles []string) (*User, error)
 	AssignRoleToStandalone(ctx context.Context, userID, role string) ([]string, error)
 	RemoveRoleFromStandalone(ctx context.Context, userID, role string) ([]string, error)
 	ListRolesByUser(ctx context.Context, userID string) ([]RoleDefinition, error)

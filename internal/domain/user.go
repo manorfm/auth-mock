@@ -15,26 +15,29 @@ type ULID = ulid.ULID
 
 // User represents a user in the system
 type User struct {
-	ID            ulid.ULID  `json:"id"`
-	Name          string     `json:"name"`
-	Email         string     `json:"email"`
-	Password      string     `json:"-"` // Password is not serialized to JSON
-	Phone         string     `json:"phone"`
-	Roles         []string   `json:"roles"`
-	UserType      string     `json:"user_type"`
-	Channels      []string   `json:"allowed_channels"`
-	EmailVerified bool       `json:"email_verified"`
+	ID            ulid.ULID `json:"id"`
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	Password      string    `json:"-"` // Password is not serialized to JSON
+	Phone         string    `json:"phone"`
+	CPF           string    `json:"cpf,omitempty"`
+	Roles         []string  `json:"roles"`
+	UserType      string    `json:"user_type"`
+	Channels      []string  `json:"allowed_channels"`
+	Status        string    `json:"status"`
+	EmailVerified bool      `json:"email_verified"`
 	// SessionVersion increments when credentials are rotated (e.g. password reset); JWTs carry this in claim "sv".
-	SessionVersion int64     `json:"session_version,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	SessionVersion int64      `json:"session_version,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
 }
 
 const (
 	UserTypeClient     = "client"
 	UserTypeManagement = "management"
 	UserTypeStandalone = "standalone"
+	UserTypeMachine    = "service"
 
 	ChannelClientApp       = "client_app"
 	ChannelManagementPanel = "management_panel"
@@ -42,6 +45,11 @@ const (
 	RoleRoot  = "root"
 	RoleAdmin = "admin"
 	RoleUser  = "user"
+
+	UserStatusActive           = "active"
+	UserStatusEmailVerify      = "email_verify"
+	UserStatusChangePassword   = "change_password"
+	UserStatusPendingEmailLink = "pending_email_link"
 )
 
 // CreateUserRequest represents the request to create a new user
@@ -50,12 +58,14 @@ type CreateUserRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=8"`
 	Phone    string `json:"phone" validate:"required"`
+	CPF      string `json:"cpf,omitempty"`
 }
 
 // UpdateUserRequest represents the request to update a user
 type UpdateUserRequest struct {
-	Name  string `json:"name" validate:"required"`
-	Phone string `json:"phone" validate:"required"`
+	Name  *string `json:"name"`
+	Phone *string `json:"phone"`
+	CPF   *string `json:"cpf"`
 }
 
 // LoginRequest represents the request to login a user
@@ -76,6 +86,7 @@ func NewUser(name, email, password, phone string) (*User, error) {
 		Password:       password,
 		Phone:          phone,
 		Roles:          []string{"user"}, // Default role
+		Status:         UserStatusEmailVerify,
 		SessionVersion: 1,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
@@ -116,7 +127,7 @@ func (u *User) HasRole(role string) bool {
 
 type UserService interface {
 	GetUser(ctx context.Context, id ulid.ULID) (*User, error)
-	UpdateUser(ctx context.Context, id ulid.ULID, name, phone string) error
+	UpdateUser(ctx context.Context, id ulid.ULID, name, phone, cpf *string) (*User, error)
 	ListUsers(ctx context.Context, limit, offset int) ([]*User, error)
 }
 

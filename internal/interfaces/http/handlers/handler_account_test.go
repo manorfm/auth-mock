@@ -78,9 +78,12 @@ func (m *MockUserService) ListUsers(ctx context.Context, limit, offset int) ([]*
 	return args.Get(0).([]*domain.User), args.Error(1)
 }
 
-func (m *MockUserService) UpdateUser(ctx context.Context, id ulid.ULID, name, phone string) error {
-	args := m.Called(ctx, id, name, phone)
-	return args.Error(0)
+func (m *MockUserService) UpdateUser(ctx context.Context, id ulid.ULID, name, phone, cpf *string) (*domain.User, error) {
+	args := m.Called(ctx, id, name, phone, cpf)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
 }
 
 // MockAccountTOTPService is a mock implementation of domain.TOTPService
@@ -96,6 +99,22 @@ func (m *MockAccountTOTPService) EnableTOTP(userID string) (*domain.TOTP, error)
 	return args.Get(0).(*domain.TOTP), args.Error(1)
 }
 
+func (m *MockAccountTOTPService) SetupTOTP(userID string) (*domain.TOTP, error) {
+	args := m.Called(userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.TOTP), args.Error(1)
+}
+
+func (m *MockAccountTOTPService) ConfirmTOTP(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *MockAccountTOTPService) VerifyTOTP(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
@@ -104,6 +123,19 @@ func (m *MockAccountTOTPService) VerifyTOTP(userID, code string) error {
 func (m *MockAccountTOTPService) VerifyBackupCode(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
+}
+
+func (m *MockAccountTOTPService) VerifyTOTPOrBackup(userID, code string) error {
+	args := m.Called(userID, code)
+	return args.Error(0)
+}
+
+func (m *MockAccountTOTPService) RegenerateBackupCodes(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *MockAccountTOTPService) DisableTOTP(userID string) error {

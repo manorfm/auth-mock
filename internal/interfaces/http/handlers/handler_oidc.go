@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/manorfm/auth-mock/internal/domain"
+	"github.com/manorfm/auth-mock/internal/infrastructure/config"
 	"github.com/manorfm/auth-mock/internal/interfaces/http/errors"
 	"go.uber.org/zap"
 )
@@ -20,18 +23,25 @@ type TokenRequest struct {
 	ClientSecret string `json:"clientSecret" validate:"required"`
 	RedirectURI  string `json:"redirectUri"`
 	CodeVerifier string `json:"codeVerifier"`
+	Scope        string `json:"scope"`
 }
 
 type OIDCHandler struct {
 	oidcService domain.OIDCService
 	jwtService  domain.JWTService
+	cfg         *config.Config
 	logger      *zap.Logger
 }
 
 func NewOIDCHandler(oidcService domain.OIDCService, jwtService domain.JWTService, logger *zap.Logger) *OIDCHandler {
+	return NewOIDCHandlerWithConfig(oidcService, jwtService, nil, logger)
+}
+
+func NewOIDCHandlerWithConfig(oidcService domain.OIDCService, jwtService domain.JWTService, cfg *config.Config, logger *zap.Logger) *OIDCHandler {
 	return &OIDCHandler{
 		oidcService: oidcService,
 		jwtService:  jwtService,
+		cfg:         cfg,
 		logger:      logger,
 	}
 }
@@ -115,11 +125,13 @@ func (h *OIDCHandler) GetOpenIDConfigurationHandler(w http.ResponseWriter, r *ht
 func (h *OIDCHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	var req TokenRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeTokenRequest(r, &req); err != nil {
 		h.logger.Error("Failed to decode request body", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrInvalidRequestBody)
 		return
 	}
+	applyBasicAuth(r, &req)
+	req.GrantType = strings.ToLower(strings.TrimSpace(req.GrantType))
 
 	// Validate request body
 	var validate = validator.New()
@@ -137,6 +149,24 @@ func (h *OIDCHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	switch req.GrantType {
+	case "client_credentials":
+		out, err := h.oidcService.IssueClientCredentialsAccess(r.Context(), req.ClientID, req.ClientSecret, req.Scope)
+		if err != nil {
+			h.logger.Error("Client credentials token failed", zap.Error(err))
+			if domainErr, ok := err.(domain.Error); ok {
+				errors.RespondWithError(w, domainErr)
+			} else {
+				errors.RespondWithError(w, domain.ErrInternal)
+			}
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(out); err != nil {
+			errors.RespondWithError(w, domain.ErrInternal)
+		}
+		return
 	case "authorization_code":
 		if req.Code == "" {
 			h.logger.Error("Missing authorization code")
@@ -201,11 +231,82 @@ func (h *OIDCHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	h.logger.Debug("Token exchange successful",
 		zap.String("grant_type", req.GrantType))
 
+	setRefreshTokenCookie(w, h.cfg, tokenPair.RefreshToken)
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tokenPair); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]string{"access_token": tokenPair.AccessToken}); err != nil {
 		h.logger.Error("Failed to encode response", zap.Error(err))
 		errors.RespondWithError(w, domain.ErrInternal)
 		return
+	}
+}
+
+func decodeTokenRequest(r *http.Request, req *TokenRequest) error {
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return err
+		}
+		req.GrantType = firstForm(r, "grant_type", "grantType")
+		req.Code = firstForm(r, "code")
+		req.RefreshToken = firstForm(r, "refresh_token", "refreshToken")
+		req.ClientID = firstForm(r, "client_id", "clientId")
+		req.ClientSecret = firstForm(r, "client_secret", "clientSecret")
+		req.RedirectURI = firstForm(r, "redirect_uri", "redirectUri")
+		req.CodeVerifier = firstForm(r, "code_verifier", "codeVerifier")
+		req.Scope = firstForm(r, "scope")
+		return nil
+	}
+	var raw map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return err
+	}
+	req.GrantType = firstMap(raw, "grantType", "grant_type")
+	req.Code = firstMap(raw, "code")
+	req.RefreshToken = firstMap(raw, "refreshToken", "refresh_token")
+	req.ClientID = firstMap(raw, "clientId", "client_id")
+	req.ClientSecret = firstMap(raw, "clientSecret", "client_secret")
+	req.RedirectURI = firstMap(raw, "redirectUri", "redirect_uri")
+	req.CodeVerifier = firstMap(raw, "codeVerifier", "code_verifier")
+	req.Scope = firstMap(raw, "scope")
+	return nil
+}
+
+func firstForm(r *http.Request, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(r.FormValue(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstMap(values map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(values[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func applyBasicAuth(r *http.Request, req *TokenRequest) {
+	header := r.Header.Get("Authorization")
+	if !strings.HasPrefix(header, "Basic ") {
+		return
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(header, "Basic "))
+	if err != nil {
+		return
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return
+	}
+	if req.ClientID == "" {
+		req.ClientID = parts[0]
+	}
+	if req.ClientSecret == "" {
+		req.ClientSecret = parts[1]
 	}
 }
 

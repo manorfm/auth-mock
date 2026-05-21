@@ -29,9 +29,12 @@ func (m *mockUserService) GetUser(ctx context.Context, id ulid.ULID) (*domain.Us
 	return args.Get(0).(*domain.User), args.Error(1)
 }
 
-func (m *mockUserService) UpdateUser(ctx context.Context, id ulid.ULID, name, phone string) error {
-	args := m.Called(ctx, id, name, phone)
-	return args.Error(0)
+func (m *mockUserService) UpdateUser(ctx context.Context, id ulid.ULID, name, phone, cpf *string) (*domain.User, error) {
+	args := m.Called(ctx, id, name, phone, cpf)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
 }
 
 func (m *mockUserService) ListUsers(ctx context.Context, limit, offset int) ([]*domain.User, error) {
@@ -68,10 +71,12 @@ func TestUserHandler_GetUser(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
-				"id":    "01JX40J5TVMSAM48DQRX1TE6PM",
-				"name":  "Test User",
-				"email": "test@example.com",
-				"phone": "1234567890",
+				"id":     "01JX40J5TVMSAM48DQRX1TE6PM",
+				"name":   "Test User",
+				"email":  "test@example.com",
+				"phone":  "1234567890",
+				"roles":  []interface{}{"user"},
+				"status": "active",
 			},
 		},
 		{
@@ -146,11 +151,16 @@ func TestUserHandler_UpdateUser(t *testing.T) {
 			},
 			mockSetup: func(m *mockUserService) {
 				id, _ := ulid.Parse("01JX40J5TVMSAM48DQRX1TE6PM")
-				m.On("UpdateUser", mock.Anything, id, "Updated Name", "9876543210").Return(nil)
+				m.On("UpdateUser", mock.Anything, id, mock.AnythingOfType("*string"), mock.AnythingOfType("*string"), (*string)(nil)).
+					Return(&domain.User{ID: id, Email: "test@example.com", Name: "Updated Name", Phone: "9876543210", Status: domain.UserStatusActive}, nil)
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
-				"message": "User updated successfully",
+				"id":     "01JX40J5TVMSAM48DQRX1TE6PM",
+				"name":   "Updated Name",
+				"email":  "test@example.com",
+				"phone":  "9876543210",
+				"status": "active",
 			},
 		},
 		{
@@ -162,7 +172,8 @@ func TestUserHandler_UpdateUser(t *testing.T) {
 			},
 			mockSetup: func(m *mockUserService) {
 				id, _ := ulid.Parse("01JX40J5TVMSAM48DQRX1TE6PM")
-				m.On("UpdateUser", mock.Anything, id, "Updated Name", "9876543210").Return(domain.ErrUserNotFound)
+				m.On("UpdateUser", mock.Anything, id, mock.AnythingOfType("*string"), mock.AnythingOfType("*string"), (*string)(nil)).
+					Return(nil, domain.ErrUserNotFound)
 			},
 			expectedStatus: http.StatusNotFound,
 			expectedBody: map[string]interface{}{
@@ -193,12 +204,12 @@ func TestUserHandler_UpdateUser(t *testing.T) {
 				"invalid": "field",
 			},
 			mockSetup: func(m *mockUserService) {
-				id, _ := ulid.Parse("01JX40J5TVMSAM48DQRX1TE6PM")
-				m.On("UpdateUser", mock.Anything, id, "", "").Return(nil)
+				// No mock setup needed
 			},
-			expectedStatus: http.StatusOK,
+			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"message": "User updated successfully",
+				"code":    "U0011",
+				"message": "Invalid field",
 			},
 		},
 	}
@@ -268,16 +279,19 @@ func TestUserHandler_ListUsers(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody: []interface{}{
 				map[string]interface{}{
-					"id":    "01JX40J5TVMSAM48DQRX1TE6PM",
-					"name":  "Test User 1",
-					"email": "test1@example.com",
-					"phone": "1234567890",
+					"id":     "01JX40J5TVMSAM48DQRX1TE6PM",
+					"name":   "Test User 1",
+					"email":  "test1@example.com",
+					"phone":  "1234567890",
+					"roles":  []interface{}{"user"},
+					"status": "active",
 				},
 				map[string]interface{}{
-					"id":    "01JX40J5TVMSAM48DQRX1TE6PM",
-					"name":  "Test User 2",
-					"email": "test2@example.com",
-					"phone": "9876543210",
+					"id":     "01JX40J5TVMSAM48DQRX1TE6PM",
+					"name":   "Test User 2",
+					"email":  "test2@example.com",
+					"phone":  "9876543210",
+					"status": "email_verify",
 				},
 			},
 		},

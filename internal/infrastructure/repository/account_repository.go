@@ -88,4 +88,4 @@ func (r *AccountRepository) Delete(ctx context.Context, id ulid.ULID) error {
 
 	delete(r.accounts, id.String())
 	return nil
-} 
+}

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/manorfm/auth-mock/internal/application"
+	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/manorfm/auth-mock/internal/infrastructure/config"
 	"github.com/manorfm/auth-mock/internal/infrastructure/jwt"
-	"github.com/manorfm/auth-mock/internal/domain"
 	"github.com/manorfm/auth-mock/internal/infrastructure/repository"
 	"github.com/manorfm/auth-mock/internal/infrastructure/totp"
 	httprouter "github.com/manorfm/auth-mock/internal/interfaces/http"
@@ -46,8 +46,8 @@ func TestOIDC_GetOpenIDConfiguration_E2E(t *testing.T) {
 		useTestServerHost bool
 	}{
 		{
-			name: "No X-Forwarded headers, derive from request Host",
-			headers: map[string]string{},
+			name:              "No X-Forwarded headers, derive from request Host",
+			headers:           map[string]string{},
 			useTestServerHost: true,
 		},
 		{

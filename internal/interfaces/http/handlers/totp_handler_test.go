@@ -27,6 +27,22 @@ func (m *MockTOTPService) EnableTOTP(userID string) (*domain.TOTP, error) {
 	return args.Get(0).(*domain.TOTP), args.Error(1)
 }
 
+func (m *MockTOTPService) SetupTOTP(userID string) (*domain.TOTP, error) {
+	args := m.Called(userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.TOTP), args.Error(1)
+}
+
+func (m *MockTOTPService) ConfirmTOTP(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *MockTOTPService) VerifyTOTP(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
@@ -35,6 +51,19 @@ func (m *MockTOTPService) VerifyTOTP(userID, code string) error {
 func (m *MockTOTPService) VerifyBackupCode(userID, code string) error {
 	args := m.Called(userID, code)
 	return args.Error(0)
+}
+
+func (m *MockTOTPService) VerifyTOTPOrBackup(userID, code string) error {
+	args := m.Called(userID, code)
+	return args.Error(0)
+}
+
+func (m *MockTOTPService) RegenerateBackupCodes(userID, code string) ([]string, error) {
+	args := m.Called(userID, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *MockTOTPService) DisableTOTP(userID string) error {
@@ -66,8 +95,8 @@ func TestTOTPHandler_EnableTOTP(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
-				"QRCode":      "test-secret",
-				"BackupCodes": []string{"backup1", "backup2"},
+				"qr_code":      "test-secret",
+				"backup_codes": []interface{}{"backup1", "backup2"},
 			},
 		},
 		{
@@ -408,6 +437,7 @@ func TestTOTPHandler_DisableTOTP(t *testing.T) {
 			name:   "Success",
 			userID: "test-user",
 			mockSetup: func(m *MockTOTPService) {
+				m.On("VerifyTOTPOrBackup", "test-user", "123456").Return(nil)
 				m.On("DisableTOTP", "test-user").Return(nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -419,7 +449,7 @@ func TestTOTPHandler_DisableTOTP(t *testing.T) {
 			name:   "TOTP Not Enabled",
 			userID: "test-user",
 			mockSetup: func(m *MockTOTPService) {
-				m.On("DisableTOTP", "test-user").Return(domain.ErrTOTPNotEnabled)
+				m.On("VerifyTOTPOrBackup", "test-user", "123456").Return(domain.ErrTOTPNotEnabled)
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
@@ -452,7 +482,7 @@ func TestTOTPHandler_DisableTOTP(t *testing.T) {
 			handler := NewTOTPHandler(mockService, logger)
 
 			// Create request
-			req := httptest.NewRequest(http.MethodPost, "/totp/disable", nil)
+			req := httptest.NewRequest(http.MethodPost, "/totp/disable", bytes.NewBufferString(`{"code":"123456"}`))
 			if tt.userID != "" {
 				req = req.WithContext(context.WithValue(req.Context(), domain.ContextKeySubject, tt.userID))
 			}
